@@ -5,9 +5,10 @@
 
 #SBATCH --mail-user=miao.hu@soton.ac.uk
 #SBATCH --mail-type=BEGIN,END,FAIL
-#SBATCH --mem=80G
 #SBATCH --nodes=1
+#SBATCH --mem=0
 #SBATCH --ntasks=1
+#SBATCH --partition=amd
 #SBATCH --cpus-per-task=16
 #SBATCH --time=24:00:00
 #SBATCH --job-name=qwen3-cpt-prepare
