@@ -1,4 +1,5 @@
-/docs/
+
+!/docs/evaluation.md
 /requirements-app.txt
 /requirements.txt
 /uv.lock
