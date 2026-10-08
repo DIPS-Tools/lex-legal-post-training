@@ -16,7 +16,16 @@
 
 set -euo pipefail
 
-SCRIPT_PROJECT_ROOT="${PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+if [[ -n "${PROJECT_ROOT:-}" ]]; then
+    SCRIPT_PROJECT_ROOT="${PROJECT_ROOT}"
+elif [[ -n "${SLURM_SUBMIT_DIR:-}" ]]; then
+    # Slurm executes a copied script from its spool directory, so BASH_SOURCE[0]
+    # does not point at the repository inside a batch job.
+    SCRIPT_PROJECT_ROOT="${SLURM_SUBMIT_DIR}"
+else
+    SCRIPT_PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+fi
+SCRIPT_PROJECT_ROOT="$(cd "${SCRIPT_PROJECT_ROOT}" && pwd)"
 PREPARE_SCRIPT="${SCRIPT_PROJECT_ROOT}/scripts/training/prepare_cpt_dataset.py"
 MODEL_PATH="${MODEL_PATH:-${HOME}/scratch/llms_model/lexlegal_llms/base/Qwen3-8B-Base}"
 DATA_ROOT="${DATA_ROOT:-${HOME}/scratch/legal_data_process/datasets}"
