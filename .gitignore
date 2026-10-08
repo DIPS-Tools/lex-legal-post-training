@@ -1,1 +1,6 @@
 /docs/
+/requirements-app.txt
+/requirements.txt
+/uv.lock
+/.python-version
+/pyproject.toml

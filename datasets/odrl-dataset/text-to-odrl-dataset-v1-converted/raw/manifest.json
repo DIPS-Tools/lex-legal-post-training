@@ -1,0 +1,107 @@
+{
+  "dataset": "Yusra2677/text-to-odrl-dataset-v1",
+  "source": "https://huggingface.co/datasets/Yusra2677/text-to-odrl-dataset-v1",
+  "downloaded_at_utc": "2026-09-02T21:38:13.102233+00:00",
+  "format": {
+    "*_raw.jsonl": "One JSON object per row with instruction, input, and output.",
+    "*_text.txt": "The input policy descriptions only, one record per line."
+  },
+  "splits": [
+    {
+      "split": "train",
+      "rows": 3711,
+      "raw_jsonl": "train_raw.jsonl",
+      "input_text": "train_text.txt",
+      "features": [
+        {
+          "feature_idx": 0,
+          "name": "instruction",
+          "type": {
+            "dtype": "string",
+            "_type": "Value"
+          }
+        },
+        {
+          "feature_idx": 1,
+          "name": "input",
+          "type": {
+            "dtype": "string",
+            "_type": "Value"
+          }
+        },
+        {
+          "feature_idx": 2,
+          "name": "output",
+          "type": {
+            "dtype": "string",
+            "_type": "Value"
+          }
+        }
+      ]
+    },
+    {
+      "split": "validation",
+      "rows": 464,
+      "raw_jsonl": "validation_raw.jsonl",
+      "input_text": "validation_text.txt",
+      "features": [
+        {
+          "feature_idx": 0,
+          "name": "instruction",
+          "type": {
+            "dtype": "string",
+            "_type": "Value"
+          }
+        },
+        {
+          "feature_idx": 1,
+          "name": "input",
+          "type": {
+            "dtype": "string",
+            "_type": "Value"
+          }
+        },
+        {
+          "feature_idx": 2,
+          "name": "output",
+          "type": {
+            "dtype": "string",
+            "_type": "Value"
+          }
+        }
+      ]
+    },
+    {
+      "split": "test",
+      "rows": 464,
+      "raw_jsonl": "test_raw.jsonl",
+      "input_text": "test_text.txt",
+      "features": [
+        {
+          "feature_idx": 0,
+          "name": "instruction",
+          "type": {
+            "dtype": "string",
+            "_type": "Value"
+          }
+        },
+        {
+          "feature_idx": 1,
+          "name": "input",
+          "type": {
+            "dtype": "string",
+            "_type": "Value"
+          }
+        },
+        {
+          "feature_idx": 2,
+          "name": "output",
+          "type": {
+            "dtype": "string",
+            "_type": "Value"
+          }
+        }
+      ]
+    }
+  ]
+}
