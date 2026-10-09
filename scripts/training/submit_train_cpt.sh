@@ -1,15 +1,8 @@
 #!/bin/bash
-# Submit from the project root:
-#   mkdir -p logs
-#   sbatch scripts/training/submit_train_cpt.sh
-#
-# Select another corpus/output name:
-#   DATASET_NAME=CPT-V1-EU-1B MODEL_RUN_NAME=Qwen-Lex-Legal-CPT-using-EU-1B \
-#     sbatch scripts/training/submit_train_cpt.sh
-#
-# Extra arguments are forwarded to train_cpt.py after the defaults. Example:
-#   sbatch scripts/training/submit_train_cpt.sh --max-steps 20 --no-eval
-
+# Submit from the project root (create logs BEFORE sbatch):
+# mkdir -p logs
+# sbatch scripts/training/submit_train_cpt.sh --attn-implementation flash_attention_2
+# Extra arguments follow defaults and are forwarded to train_cpt.py.
 #SBATCH --mail-user=miao.hu@soton.ac.uk
 #SBATCH --mail-type=BEGIN,END,FAIL
 #SBATCH --mem=160G
@@ -23,25 +16,14 @@
 #SBATCH --output=logs/qwen3-8b-cpt-%j.out
 
 set -euo pipefail
-
-
-CUDA_MODULE_NAME="${CUDA_MODULE_NAME:-cuda/12.6}"
+CUDA_MODULE_NAME="${CUDA_MODULE_NAME:-cuda/12.6.3}"
+GCC_MODULE_NAME="${GCC_MODULE_NAME:-gcc/11.5.0}"
 CUDA_TOOLKIT_ROOT="${CUDA_TOOLKIT_ROOT:-/iridisfs/ixsoftware/cuda/12.6.3}"
-
-# Slurm batch shells must initialize the same CUDA development toolkit used by
-# the cu126 PyTorch build. This also makes nvcc available for compiled CUDA
-# extensions such as FlashAttention.
-module load "${CUDA_MODULE_NAME}"
-export CUDA_HOME="${CUDA_TOOLKIT_ROOT}"
-export PATH="${CUDA_HOME}/bin:${PATH}"
-export LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${LD_LIBRARY_PATH:-}"
-
+CONDA_ENV_NAME="${CONDA_ENV_NAME:-lex_legal_rl_post_training_env}"
 
 if [[ -n "${PROJECT_ROOT:-}" ]]; then
     SCRIPT_PROJECT_ROOT="${PROJECT_ROOT}"
 elif [[ -n "${SLURM_SUBMIT_DIR:-}" ]]; then
-    # Slurm executes a copied script from its spool directory, so BASH_SOURCE[0]
-    # does not point at the repository inside a batch job.
     SCRIPT_PROJECT_ROOT="${SLURM_SUBMIT_DIR}"
 else
     SCRIPT_PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -57,18 +39,43 @@ TOKENIZED_DIR="${TOKENIZED_DIR:-${DATA_ROOT}/CPT-tokenized/${DATASET_NAME}-Qwen3
 MODEL_RUN_NAME="${MODEL_RUN_NAME:-Qwen-Lex-Legal-CPT-using-Proportional-5B}"
 FINAL_MODEL_DIR="${FINAL_MODEL_DIR:-${HOME}/scratch/llms_model/lexlegal_llms/cpt-model/${MODEL_RUN_NAME}}"
 CHECKPOINT_DIR="${CHECKPOINT_DIR:-${HOME}/scratch/llms_model/lexlegal_llms/checkpoints/${MODEL_RUN_NAME}}"
-CONDA_ENV_NAME="${CONDA_ENV_NAME:-lex_legal_rl_post_training_env}"
 SEQUENCE_LENGTH="${SEQUENCE_LENGTH:-4096}"
 PREPARE_DATA="${PREPARE_DATA:-0}"
 STAGE_TOKENIZED_DATA="${STAGE_TOKENIZED_DATA:-1}"
 GPUS_PER_NODE="${GPUS_PER_NODE:-4}"
 REPLAY_REGEX="${REPLAY_REGEX:-(replay|general|fineweb|wikipedia|openwebtext|dolma|slimpajama)}"
+ATTN_IMPLEMENTATION="${ATTN_IMPLEMENTATION:-flash_attention_2}"
+# Match the final CLI override when deciding whether to run the FA2 check.
+extra_args=("$@")
+for ((i=0; i<${#extra_args[@]}; i++)); do
+    case "${extra_args[i]}" in
+        --attn-implementation)
+            if ((i+1 >= ${#extra_args[@]})); then
+                echo '--attn-implementation requires a value' >&2
+                exit 1
+            fi
+            ATTN_IMPLEMENTATION="${extra_args[i+1]}"
+            ;;
+        --attn-implementation=*) ATTN_IMPLEMENTATION="${extra_args[i]#*=}" ;;
+    esac
+done
 
 CONDA_BASE="$(conda info --base)"
 set +u
 source "${CONDA_BASE}/etc/profile.d/conda.sh"
 conda activate "${CONDA_ENV_NAME}"
 set -u
+module load "${GCC_MODULE_NAME}"
+module load "${CUDA_MODULE_NAME}"
+export CC="$(command -v gcc)"
+export CXX="$(command -v g++)"
+export CUDAHOSTCXX="${CXX}"
+export CUDA_HOME="${CUDA_TOOLKIT_ROOT}"
+export PATH="${CUDA_HOME}/bin:${PATH}"
+export LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${LD_LIBRARY_PATH:-}"
+export TORCH_NO_COMPILER_WRAPPER=1
+# Build-only overrides from the installation must not leak into training.
+unset _PYTHON_SYSCONFIGDATA_NAME FLASH_ATTENTION_FORCE_BUILD
 
 JOB_TEMP_DIR="${SLURM_TMPDIR:-/tmp}/lex-legal-cpt-${SLURM_JOB_ID:-manual}"
 export HF_HOME="${JOB_TEMP_DIR}/huggingface"
@@ -80,10 +87,10 @@ export TOKENIZERS_PARALLELISM=false
 export PYTHONUNBUFFERED=1
 export PYTHONNOUSERSITE=1
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-16}"
+export ATTN_IMPLEMENTATION GPUS_PER_NODE
 
 cd "${SCRIPT_PROJECT_ROOT}"
 mkdir -p "${HF_HOME}" "${FINAL_MODEL_DIR}" "${CHECKPOINT_DIR}" "${TOKENIZED_DIR}" "${SCRIPT_PROJECT_ROOT}/logs"
-
 echo "Slurm job ID: ${SLURM_JOB_ID:-not-submitted}"
 echo "Node: $(hostname)"
 echo "Started: $(date --iso-8601=seconds)"
@@ -94,7 +101,10 @@ echo "Dataset: ${DATASET_DIR}"
 echo "Tokenized dataset: ${TOKENIZED_DIR}"
 echo "Final model: ${FINAL_MODEL_DIR}"
 echo "Checkpoints: ${CHECKPOINT_DIR}"
-echo "Extra training arguments: $*"
+echo "Attention implementation: ${ATTN_IMPLEMENTATION}"
+printf 'Extra training arguments:'
+printf ' %q' "$@"
+printf '\n'
 
 if [[ "${CONDA_DEFAULT_ENV:-}" != "${CONDA_ENV_NAME}" ]]; then
     echo "Expected Conda environment ${CONDA_ENV_NAME}, got ${CONDA_DEFAULT_ENV:-unset}" >&2
@@ -106,16 +116,39 @@ for required_file in "${TRAINING_SCRIPT}" "${PREPARE_SCRIPT}" "${MODEL_PATH}/con
         exit 1
     fi
 done
-if find "${DATASET_DIR}" -maxdepth 1 -name '*.jsonl' -print -quit | grep -q .; then
-    :
-else
+shopt -s nullglob
+jsonl_shards=("${DATASET_DIR}"/*.jsonl)
+if ((${#jsonl_shards[@]} == 0)); then
     echo "No final JSONL shards found directly under ${DATASET_DIR}" >&2
-    echo "The pipeline will not train from .work/preprocessed." >&2
+    echo 'The pipeline will not train from .work/preprocessed.' >&2
     exit 1
 fi
+shopt -u nullglob
 
 python --version
-python -c "import torch, transformers, accelerate, deepspeed, numpy; print('PyTorch:', torch.__version__); print('Transformers:', transformers.__version__); print('Accelerate:', accelerate.__version__); print('DeepSpeed:', deepspeed.__version__); print('NumPy:', numpy.__version__); assert torch.cuda.is_available(), 'Allocated GPU is not visible'; assert torch.cuda.is_bf16_supported(), 'GPU lacks BF16 support'; print('GPU:', torch.cuda.get_device_name(0)); print('CUDA:', torch.version.cuda)"
+python - <<'PY'
+import os
+import torch, transformers, accelerate, deepspeed, numpy
+for name, package in [('PyTorch', torch), ('Transformers', transformers),
+                      ('Accelerate', accelerate), ('DeepSpeed', deepspeed), ('NumPy', numpy)]:
+    print(f'{name}: {package.__version__}')
+assert torch.cuda.is_available(), 'Allocated GPU is not visible'
+expected = int(os.environ['GPUS_PER_NODE'])
+assert torch.cuda.device_count() == expected, f'Expected {expected} GPUs, found {torch.cuda.device_count()}'
+assert torch.cuda.is_bf16_supported(), 'GPU lacks BF16 support'
+print('GPU:', torch.cuda.get_device_name(0))
+print('CUDA:', torch.version.cuda)
+if os.environ['ATTN_IMPLEMENTATION'] == 'flash_attention_2':
+    import flash_attn
+    import flash_attn_2_cuda
+    from flash_attn import flash_attn_func
+    print('FlashAttention:', flash_attn.__version__)
+    q = torch.randn(1, 128, 8, 64, device='cuda', dtype=torch.bfloat16, requires_grad=True)
+    out = flash_attn_func(q, q, q, causal=True)
+    out.float().sum().backward()
+    torch.cuda.synchronize()
+    print('FlashAttention BF16 forward/backward passed')
+PY
 nvidia-smi
 
 if [[ ! -f "${TOKENIZED_DIR}/metadata.json" ]]; then
@@ -130,7 +163,6 @@ if [[ ! -f "${TOKENIZED_DIR}/metadata.json" ]]; then
         --output-dir "${TOKENIZED_DIR}" \
         --replay-regex "${REPLAY_REGEX}"
 fi
-
 TRAIN_TOKENIZED_DIR="${TOKENIZED_DIR}"
 if [[ "${STAGE_TOKENIZED_DATA}" == "1" ]]; then
     LOCAL_TOKENIZED_DIR="${JOB_TEMP_DIR}/tokenized/${DATASET_NAME}-Qwen3"
@@ -139,7 +171,6 @@ if [[ "${STAGE_TOKENIZED_DATA}" == "1" ]]; then
     TRAIN_TOKENIZED_DIR="${LOCAL_TOKENIZED_DIR}"
     echo "Staged tokenized dataset to node-local storage: ${TRAIN_TOKENIZED_DIR}"
 fi
-
 srun --unbuffered torchrun \
     --standalone \
     --nnodes=1 \
@@ -161,8 +192,12 @@ srun --unbuffered torchrun \
     --eval-steps 250 \
     --save-steps 250 \
     --save-total-limit 2 \
+    --attn-implementation "${ATTN_IMPLEMENTATION}" \
     "$@"
-
 echo "Finished: $(date --iso-8601=seconds)"
 echo "Final model: ${FINAL_MODEL_DIR}"
 echo "Checkpoints: ${CHECKPOINT_DIR}"
+
+# mkdir -p logs
+#sbatch scripts/training/submit_train_cpt.sh \
+#    --attn-implementation flash_attention_2
