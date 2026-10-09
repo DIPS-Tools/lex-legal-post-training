@@ -24,6 +24,22 @@
 
 set -euo pipefail
 
+CUDA_MODULE_NAME="${CUDA_MODULE_NAME:-cuda/12.6}"
+CUDA_TOOLKIT_ROOT="${CUDA_TOOLKIT_ROOT:-/iridisfs/ixsoftware/cuda/12.6.3}"
+
+# Slurm batch shells must initialize the same CUDA development toolkit used by
+# the cu126 PyTorch build. This also makes nvcc available for compiled CUDA
+# extensions such as FlashAttention.
+module load "${CUDA_MODULE_NAME}"
+export CUDA_HOME="${CUDA_TOOLKIT_ROOT}"
+export PATH="${CUDA_HOME}/bin:${PATH}"
+export LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${LD_LIBRARY_PATH:-}"
+
+if [[ ! -x "${CUDA_HOME}/bin/nvcc" ]]; then
+    echo "CUDA compiler is missing or not executable: ${CUDA_HOME}/bin/nvcc" >&2
+    exit 1
+fi
+
 SCRIPT_PROJECT_ROOT="${PROJECT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 TRAINING_SCRIPT="${SCRIPT_PROJECT_ROOT}/scripts/training/train_cpt.py"
 PREPARE_SCRIPT="${SCRIPT_PROJECT_ROOT}/scripts/training/prepare_cpt_dataset.py"
@@ -67,6 +83,8 @@ echo "Node: $(hostname)"
 echo "Started: $(date --iso-8601=seconds)"
 echo "Project root: ${SCRIPT_PROJECT_ROOT}"
 echo "Conda environment: ${CONDA_DEFAULT_ENV:-unset}"
+echo "CUDA module: ${CUDA_MODULE_NAME}"
+echo "CUDA_HOME: ${CUDA_HOME}"
 echo "Base model: ${MODEL_PATH}"
 echo "Dataset: ${DATASET_DIR}"
 echo "Tokenized dataset: ${TOKENIZED_DIR}"
@@ -93,7 +111,8 @@ else
 fi
 
 python --version
-python -c "import torch, transformers, accelerate, deepspeed, numpy; print('PyTorch:', torch.__version__); print('Transformers:', transformers.__version__); print('Accelerate:', accelerate.__version__); print('DeepSpeed:', deepspeed.__version__); print('NumPy:', numpy.__version__); assert torch.cuda.is_available(), 'Allocated GPU is not visible'; assert torch.cuda.is_bf16_supported(), 'GPU lacks BF16 support'; print('GPU:', torch.cuda.get_device_name(0)); print('CUDA:', torch.version.cuda)"
+"${CUDA_HOME}/bin/nvcc" --version
+python -c "import torch, transformers, accelerate, deepspeed, numpy; from torch.utils.cpp_extension import CUDA_HOME as torch_cuda_home; print('PyTorch:', torch.__version__); print('Transformers:', transformers.__version__); print('Accelerate:', accelerate.__version__); print('DeepSpeed:', deepspeed.__version__); print('NumPy:', numpy.__version__); print('PyTorch CUDA runtime:', torch.version.cuda); print('CUDA_HOME detected by PyTorch:', torch_cuda_home); assert torch_cuda_home == '${CUDA_TOOLKIT_ROOT}', f'Unexpected CUDA_HOME: {torch_cuda_home}'; assert torch.version.cuda == '12.6', f'Expected PyTorch CUDA 12.6, got {torch.version.cuda}'; assert torch.cuda.is_available(), 'Allocated GPU is not visible'; assert torch.cuda.is_bf16_supported(), 'GPU lacks BF16 support'; print('GPU:', torch.cuda.get_device_name(0))"
 nvidia-smi
 
 if [[ ! -f "${TOKENIZED_DIR}/metadata.json" ]]; then
