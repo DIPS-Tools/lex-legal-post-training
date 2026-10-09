@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
 import math
 import os
@@ -227,51 +228,74 @@ def main() -> None:
     )
 
     run_name = args.run_name or output_dir.name
-    training_args = TrainingArguments(
-        output_dir=str(checkpoint_dir),
-        overwrite_output_dir=False,
-        do_train=True,
-        do_eval=bool(eval_datasets),
-        eval_strategy="steps" if eval_datasets else "no",
-        eval_steps=args.eval_steps if eval_datasets else None,
-        save_strategy="steps",
-        save_steps=args.save_steps,
-        save_total_limit=args.save_total_limit,
-        logging_strategy="steps",
-        logging_steps=args.logging_steps,
-        logging_first_step=True,
-        per_device_train_batch_size=args.per_device_train_batch_size,
-        per_device_eval_batch_size=args.per_device_eval_batch_size,
-        gradient_accumulation_steps=args.gradient_accumulation_steps,
-        learning_rate=args.learning_rate,
-        weight_decay=args.weight_decay,
-        max_grad_norm=args.max_grad_norm,
-        warmup_ratio=args.warmup_ratio,
-        lr_scheduler_type="cosine",
-        max_steps=max_steps,
-        bf16=True,
-        tf32=True,
-        gradient_checkpointing=True,
-        gradient_checkpointing_kwargs={"use_reentrant": False},
-        deepspeed=str(deepspeed_path),
-        dataloader_num_workers=args.dataloader_num_workers,
-        dataloader_pin_memory=True,
-        report_to=args.report_to,
-        run_name=run_name,
-        seed=args.seed,
-        data_seed=args.data_seed,
-        remove_unused_columns=False,
-        save_safetensors=True,
-        ddp_find_unused_parameters=False,
-    )
+    # Transformers 5 removed overwrite_output_dir, save_safetensors, and
+    # warmup_ratio. In v5, a float in [0, 1) passed as warmup_steps represents
+    # a ratio. Build the small version-dependent part from the installed
+    # TrainingArguments signature while keeping the training policy identical.
+    training_argument_names = set(inspect.signature(TrainingArguments).parameters)
+    training_argument_kwargs: dict[str, Any] = {
+        "output_dir": str(checkpoint_dir),
+        "do_train": True,
+        "do_eval": bool(eval_datasets),
+        "eval_strategy": "steps" if eval_datasets else "no",
+        "eval_steps": args.eval_steps if eval_datasets else None,
+        "save_strategy": "steps",
+        "save_steps": args.save_steps,
+        "save_total_limit": args.save_total_limit,
+        "logging_strategy": "steps",
+        "logging_steps": args.logging_steps,
+        "logging_first_step": True,
+        "per_device_train_batch_size": args.per_device_train_batch_size,
+        "per_device_eval_batch_size": args.per_device_eval_batch_size,
+        "gradient_accumulation_steps": args.gradient_accumulation_steps,
+        "learning_rate": args.learning_rate,
+        "weight_decay": args.weight_decay,
+        "max_grad_norm": args.max_grad_norm,
+        "lr_scheduler_type": "cosine",
+        "max_steps": max_steps,
+        "bf16": True,
+        "tf32": True,
+        "gradient_checkpointing": True,
+        "gradient_checkpointing_kwargs": {"use_reentrant": False},
+        "deepspeed": str(deepspeed_path),
+        "dataloader_num_workers": args.dataloader_num_workers,
+        "dataloader_pin_memory": True,
+        "report_to": args.report_to,
+        "run_name": run_name,
+        "seed": args.seed,
+        "data_seed": args.data_seed,
+        "remove_unused_columns": False,
+        "ddp_find_unused_parameters": False,
+    }
+    if "warmup_ratio" in training_argument_names:
+        training_argument_kwargs["warmup_ratio"] = args.warmup_ratio
+    elif "warmup_steps" in training_argument_names:
+        training_argument_kwargs["warmup_steps"] = args.warmup_ratio
+    else:
+        raise RuntimeError("Installed Transformers exposes neither warmup_ratio nor warmup_steps")
+    if "overwrite_output_dir" in training_argument_names:
+        training_argument_kwargs["overwrite_output_dir"] = False
+    if "save_safetensors" in training_argument_names:
+        training_argument_kwargs["save_safetensors"] = True
+
+    unsupported_training_arguments = set(training_argument_kwargs) - training_argument_names
+    if unsupported_training_arguments:
+        raise RuntimeError(
+            "TrainingArguments API is incompatible with this CPT trainer; unsupported arguments: "
+            f"{sorted(unsupported_training_arguments)}"
+        )
+    training_args = TrainingArguments(**training_argument_kwargs)
     # Construct TrainingArguments before loading the model so Transformers can
     # activate DeepSpeed ZeRO-3 initialization during from_pretrained().
-    model = AutoModelForCausalLM.from_pretrained(
-        model_path,
-        torch_dtype=torch.bfloat16,
-        attn_implementation=args.attn_implementation,
-        local_files_only=True,
-    )
+    model_loading_kwargs: dict[str, Any] = {
+        "attn_implementation": args.attn_implementation,
+        "local_files_only": True,
+    }
+    if Version(transformers.__version__).major >= 5:
+        model_loading_kwargs["dtype"] = torch.bfloat16
+    else:
+        model_loading_kwargs["torch_dtype"] = torch.bfloat16
+    model = AutoModelForCausalLM.from_pretrained(model_path, **model_loading_kwargs)
     model.config.use_cache = False
     model.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant": False})
     trainer = Trainer(
