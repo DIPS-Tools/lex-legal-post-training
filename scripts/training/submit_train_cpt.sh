@@ -201,3 +201,130 @@ echo "Checkpoints: ${CHECKPOINT_DIR}"
 # mkdir -p logs
 #sbatch scripts/training/submit_train_cpt.sh \
 #    --attn-implementation flash_attention_2
+
+#   sbatch scripts/training/submit_train_cpt.sh \
+#        --attn-implementation sdpa \
+#        --resume-from-checkpoint auto
+
+
+#
+# srun       --jobid=1785801   \
+# --overlap       \
+# --nodes=1      \
+# --ntasks=1       \
+# --cpus-per-task=1  \
+# --pty bash
+#  watch -n 2 nvidia-smi
+
+#  ### 1. Prepare/tokenize CPT-V2-Legislation-3B
+  #
+  #  cd ~/scratch/dips_project/lex-legal-post-training
+  #  mkdir -p logs
+  #
+  #  DATASET_NAME=CPT-V2-Legislation-3B \
+  #  sbatch scripts/training/submit_prepare_cpt.sh
+  #
+  #  This will read:
+  #
+  #  ~/scratch/legal_data_process/datasets/CPT-V2-Legislation-3B
+  #
+  #  and write tokenized data to:
+  #
+  #  ~/scratch/legal_data_process/datasets/CPT-tokenized/CPT-V2-Legislation-3B-Qwen3
+  #
+  #  Monitor it:
+  #
+  #  squeue -u "${USER}"
+  #  tail -f logs/qwen3-cpt-prepare-<JOB_ID>.out
+  #
+  #  Wait until the preparation job finishes successfully. Confirm:
+  #
+  #  test -f \
+  #    ~/scratch/legal_data_process/datasets/CPT-tokenized/CPT-V2-Legislation-3B-Qwen3/
+  #    metadata.json \
+  #    && echo "Tokenized dataset is ready"
+  #
+  #  ### 2. Train with FlashAttention
+  #
+  #  DATASET_NAME=CPT-V2-Legislation-3B \
+  #  MODEL_RUN_NAME=Qwen-Lex-Legal-CPT-using-Legislation-3B \
+  #  sbatch scripts/training/submit_train_cpt.sh \
+  #      --attn-implementation flash_attention_2
+  #
+  #  The outputs will be:
+  #
+  #  Final model:
+  #  ~/scratch/llms_model/lexlegal_llms/cpt-model/Qwen-Lex-Legal-CPT-using-Legislation-3B
+  #
+  #  Checkpoints:
+  #  ~/scratch/llms_model/lexlegal_llms/checkpoints/Qwen-Lex-Legal-CPT-using-Legislation-3B
+  #
+  #  The training launcher will test the installed FlashAttention package with a small BF16
+  #  forward/backward operation before loading the model.
+  #
+  #  If the training job later stops after producing checkpoints, resume with the same
+  #  environment variables:
+  #
+  #  DATASET_NAME=CPT-V2-Legislation-3B \
+  #  MODEL_RUN_NAME=Qwen-Lex-Legal-CPT-using-Legislation-3B \
+  #  sbatch scripts/training/submit_train_cpt.sh \
+  #      --attn-implementation flash_attention_2 \
+  #      --resume-from-checkpoint auto
+  #
+  #  Do not run the training command until the preparation job has successfully produced
+  #  metadata.json.
+
+#  Submit both jobs together using a Slurm afterok dependency:
+   #
+   #  cd ~/scratch/dips_project/lex-legal-post-training
+   #  mkdir -p logs
+   #
+   #  PREP_JOB_RESULT="$(
+   #      sbatch --parsable \
+   #          --export=ALL,DATASET_NAME=CPT-V2-Legislation-3B \
+   #          scripts/training/submit_prepare_cpt.sh
+   #  )"
+   #  PREP_JOB_ID="${PREP_JOB_RESULT%%;*}"
+   #
+   #  TRAIN_JOB_RESULT="$(
+   #      sbatch --parsable \
+   #          --dependency="afterok:${PREP_JOB_ID}" \
+   #          --export=ALL,DATASET_NAME=CPT-V2-Legislation-3B,MODEL_RUN_NAME=Qwen-Lex-Legal-
+   #          CPT-using-Legislation-3B \
+   #          scripts/training/submit_train_cpt.sh \
+   #          --attn-implementation flash_attention_2
+   #  )"
+   #  TRAIN_JOB_ID="${TRAIN_JOB_RESULT%%;*}"
+   #
+   #  echo "Preparation job: ${PREP_JOB_ID}"
+   #  echo "Training job:    ${TRAIN_JOB_ID}"
+   #  echo "Training dependency: afterok:${PREP_JOB_ID}"
+   #
+   #  The training job will remain pending until the preparation job finishes successfully. If
+   #  preparation fails, training will not start.
+   #
+   #  Check both jobs:
+   #
+   #  squeue -j "${PREP_JOB_ID},${TRAIN_JOB_ID}" \
+   #      -o "%.18i %.24j %.10T %.20R"
+   #
+   #  Monitor preparation:
+   #
+   #  tail -f "logs/qwen3-cpt-prepare-${PREP_JOB_ID}.out"
+   #
+   #  After preparation succeeds and training starts:
+   #
+   #  tail -f "logs/qwen3-8b-cpt-${TRAIN_JOB_ID}.out"
+   #
+   #  Outputs will be:
+   #
+   #  Tokenized dataset:
+   #  ~/scratch/legal_data_process/datasets/CPT-tokenized/CPT-V2-Legislation-3B-Qwen3
+   #
+   #  Final model:
+   #  ~/scratch/llms_model/lexlegal_llms/cpt-model/Qwen-Lex-Legal-CPT-using-Legislation-3B
+   #
+   #  Checkpoints:
+   #  ~/scratch/llms_model/lexlegal_llms/checkpoints/Qwen-Lex-Legal-CPT-using-Legislation-3B
+   #
+   #  done 11:39 PM
