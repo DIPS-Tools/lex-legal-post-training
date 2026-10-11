@@ -206,6 +206,14 @@ echo "Checkpoints: ${CHECKPOINT_DIR}"
 #        --attn-implementation sdpa \
 #        --resume-from-checkpoint auto
 
+# when occuring bug, re-running:
+#DATASET_NAME=CPT-Proportional-5B
+#MODEL_RUN_NAME=Qwen-Lex-Legal-CPT-using-Proportional-5B
+#sbatch --exclude=pink7001       scripts/training/submit_train_cpt.sh
+#--attn-implementation sdpa       --resume-from-checkpoint
+#"${HOME}/scratch/llms_model/lexlegal_llms/checkpoints/Qwen-Lex-Legal-CPT-using-Proportional-5B/checkpoint-13000"
+#--save-total-limit 1
+
 
 #
 # srun       --jobid=1785801   \
@@ -217,62 +225,62 @@ echo "Checkpoints: ${CHECKPOINT_DIR}"
 #  watch -n 2 nvidia-smi
 
 #  ### 1. Prepare/tokenize CPT-V2-Legislation-3B
-  #
-  #  cd ~/scratch/dips_project/lex-legal-post-training
-  #  mkdir -p logs
-  #
-  #  DATASET_NAME=CPT-V2-Legislation-3B \
-  #  sbatch scripts/training/submit_prepare_cpt.sh
-  #
-  #  This will read:
-  #
-  #  ~/scratch/legal_data_process/datasets/CPT-V2-Legislation-3B
-  #
-  #  and write tokenized data to:
-  #
-  #  ~/scratch/legal_data_process/datasets/CPT-tokenized/CPT-V2-Legislation-3B-Qwen3
-  #
-  #  Monitor it:
-  #
-  #  squeue -u "${USER}"
-  #  tail -f logs/qwen3-cpt-prepare-<JOB_ID>.out
-  #
-  #  Wait until the preparation job finishes successfully. Confirm:
-  #
-  #  test -f \
-  #    ~/scratch/legal_data_process/datasets/CPT-tokenized/CPT-V2-Legislation-3B-Qwen3/
-  #    metadata.json \
-  #    && echo "Tokenized dataset is ready"
-  #
-  #  ### 2. Train with FlashAttention
-  #
-  #  DATASET_NAME=CPT-V2-Legislation-3B \
-  #  MODEL_RUN_NAME=Qwen-Lex-Legal-CPT-using-Legislation-3B \
-  #  sbatch scripts/training/submit_train_cpt.sh \
-  #      --attn-implementation flash_attention_2
-  #
-  #  The outputs will be:
-  #
-  #  Final model:
-  #  ~/scratch/llms_model/lexlegal_llms/cpt-model/Qwen-Lex-Legal-CPT-using-Legislation-3B
-  #
-  #  Checkpoints:
-  #  ~/scratch/llms_model/lexlegal_llms/checkpoints/Qwen-Lex-Legal-CPT-using-Legislation-3B
-  #
-  #  The training launcher will test the installed FlashAttention package with a small BF16
-  #  forward/backward operation before loading the model.
-  #
-  #  If the training job later stops after producing checkpoints, resume with the same
-  #  environment variables:
-  #
-  #  DATASET_NAME=CPT-V2-Legislation-3B \
-  #  MODEL_RUN_NAME=Qwen-Lex-Legal-CPT-using-Legislation-3B \
-  #  sbatch scripts/training/submit_train_cpt.sh \
-  #      --attn-implementation flash_attention_2 \
-  #      --resume-from-checkpoint auto
-  #
-  #  Do not run the training command until the preparation job has successfully produced
-  #  metadata.json.
+#
+#  cd ~/scratch/dips_project/lex-legal-post-training
+#  mkdir -p logs
+#
+#  DATASET_NAME=CPT-V2-Legislation-3B \
+#  sbatch scripts/training/submit_prepare_cpt.sh
+#
+#  This will read:
+#
+#  ~/scratch/legal_data_process/datasets/CPT-V2-Legislation-3B
+#
+#  and write tokenized data to:
+#
+#  ~/scratch/legal_data_process/datasets/CPT-tokenized/CPT-V2-Legislation-3B-Qwen3
+#
+#  Monitor it:
+#
+#  squeue -u "${USER}"
+#  tail -f logs/qwen3-cpt-prepare-<JOB_ID>.out
+#
+#  Wait until the preparation job finishes successfully. Confirm:
+#
+#  test -f \
+#    ~/scratch/legal_data_process/datasets/CPT-tokenized/CPT-V2-Legislation-3B-Qwen3/
+#    metadata.json \
+#    && echo "Tokenized dataset is ready"
+#
+#  ### 2. Train with FlashAttention
+#
+#  DATASET_NAME=CPT-V2-Legislation-3B \
+#  MODEL_RUN_NAME=Qwen-Lex-Legal-CPT-using-Legislation-3B \
+#  sbatch scripts/training/submit_train_cpt.sh \
+#      --attn-implementation flash_attention_2
+#
+#  The outputs will be:
+#
+#  Final model:
+#  ~/scratch/llms_model/lexlegal_llms/cpt-model/Qwen-Lex-Legal-CPT-using-Legislation-3B
+#
+#  Checkpoints:
+#  ~/scratch/llms_model/lexlegal_llms/checkpoints/Qwen-Lex-Legal-CPT-using-Legislation-3B
+#
+#  The training launcher will test the installed FlashAttention package with a small BF16
+#  forward/backward operation before loading the model.
+#
+#  If the training job later stops after producing checkpoints, resume with the same
+#  environment variables:
+#
+#  DATASET_NAME=CPT-V2-Legislation-3B \
+#  MODEL_RUN_NAME=Qwen-Lex-Legal-CPT-using-Legislation-3B \
+#  sbatch scripts/training/submit_train_cpt.sh \
+#      --attn-implementation flash_attention_2 \
+#      --resume-from-checkpoint auto
+#
+#  Do not run the training command until the preparation job has successfully produced
+#  metadata.json.
 
 #  Submit both jobs together using a Slurm afterok dependency:
 #

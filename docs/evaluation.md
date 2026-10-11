@@ -355,6 +355,28 @@ sbatch scripts/evaluation/submit_evaluation.sh cpt \
   --attn-implementation flash_attention_2
 ```
 
+```bash
+#running: qwen3-legal-eval-1801846.out
+BASE_JOB_ID="$(
+  sbatch --parsable \
+      scripts/evaluation/submit_evaluation.sh base \
+      --benchmarks legalbench legalbench_instruct mmlu \
+      --attn-implementation flash_attention_2
+)"
+echo "Base job: ${BASE_JOB_ID}"
+
+#qwen3-legal-eval-1801847.out
+CPT_JOB_ID="$(
+  sbatch --parsable \
+      scripts/evaluation/submit_evaluation.sh cpt \
+      --benchmarks legalbench legalbench_instruct mmlu \
+      --attn-implementation flash_attention_2
+)"
+echo "CPT job: ${CPT_JOB_ID}"
+
+```
+
+
 ### 7.4 Safer benchmark-split submissions
 
 Original LegalBench and LegalBench-Instruct each contain roughly 90,000 test
@@ -373,6 +395,8 @@ for benchmark in legalbench legalbench_instruct mmlu; do
     --output-dir "results/evaluation/Qwen3-8B-CPT-Legislation-3B-${benchmark}"
 done
 ```
+
+
 
 Use the same split strategy later for SFT. Do not combine LegalBench and
 LegalBench-Instruct scores into one average because they are related benchmark
