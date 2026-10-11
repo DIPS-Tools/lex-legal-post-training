@@ -275,56 +275,56 @@ echo "Checkpoints: ${CHECKPOINT_DIR}"
   #  metadata.json.
 
 #  Submit both jobs together using a Slurm afterok dependency:
-   #
-   #  cd ~/scratch/dips_project/lex-legal-post-training
-   #  mkdir -p logs
-   #
-   #  PREP_JOB_RESULT="$(
-   #      sbatch --parsable \
-   #          --export=ALL,DATASET_NAME=CPT-V2-Legislation-3B \
-   #          scripts/training/submit_prepare_cpt.sh
-   #  )"
-   #  PREP_JOB_ID="${PREP_JOB_RESULT%%;*}"
-   #
-   #  TRAIN_JOB_RESULT="$(
-   #      sbatch --parsable \
-   #          --dependency="afterok:${PREP_JOB_ID}" \
-   #          --export=ALL,DATASET_NAME=CPT-V2-Legislation-3B,MODEL_RUN_NAME=Qwen-Lex-Legal-
-   #          CPT-using-Legislation-3B \
-   #          scripts/training/submit_train_cpt.sh \
-   #          --attn-implementation flash_attention_2
-   #  )"
-   #  TRAIN_JOB_ID="${TRAIN_JOB_RESULT%%;*}"
-   #
-   #  echo "Preparation job: ${PREP_JOB_ID}"
-   #  echo "Training job:    ${TRAIN_JOB_ID}"
-   #  echo "Training dependency: afterok:${PREP_JOB_ID}"
-   #
-   #  The training job will remain pending until the preparation job finishes successfully. If
-   #  preparation fails, training will not start.
-   #
-   #  Check both jobs:
-   #
-   #  squeue -j "${PREP_JOB_ID},${TRAIN_JOB_ID}" \
-   #      -o "%.18i %.24j %.10T %.20R"
-   #
-   #  Monitor preparation:
-   #
-   #  tail -f "logs/qwen3-cpt-prepare-${PREP_JOB_ID}.out"
-   #
-   #  After preparation succeeds and training starts:
-   #
-   #  tail -f "logs/qwen3-8b-cpt-${TRAIN_JOB_ID}.out"
-   #
-   #  Outputs will be:
-   #
-   #  Tokenized dataset:
-   #  ~/scratch/legal_data_process/datasets/CPT-tokenized/CPT-V2-Legislation-3B-Qwen3
-   #
-   #  Final model:
-   #  ~/scratch/llms_model/lexlegal_llms/cpt-model/Qwen-Lex-Legal-CPT-using-Legislation-3B
-   #
-   #  Checkpoints:
-   #  ~/scratch/llms_model/lexlegal_llms/checkpoints/Qwen-Lex-Legal-CPT-using-Legislation-3B
-   #
-   #  done 11:39 PM
+#
+#     cd ~/scratch/dips_project/lex-legal-post-training
+#     mkdir -p logs
+#
+#     PREP_JOB_RESULT="$(
+#         sbatch --parsable \
+#             --export=ALL,DATASET_NAME=CPT-V2-Legislation-3B \
+#             scripts/training/submit_prepare_cpt.sh
+#     )"
+#     PREP_JOB_ID="${PREP_JOB_RESULT%%;*}"
+#
+#     TRAIN_JOB_RESULT="$(
+#         sbatch --parsable \
+#             --dependency="afterok:${PREP_JOB_ID}" \
+#             --export=ALL,DATASET_NAME=CPT-V2-Legislation-3B,MODEL_RUN_NAME=Qwen-Lex-Legal-
+#             CPT-using-Legislation-3B \
+#             scripts/training/submit_train_cpt.sh \
+#             --attn-implementation flash_attention_2
+#     )"
+#     TRAIN_JOB_ID="${TRAIN_JOB_RESULT%%;*}"
+#
+#     echo "Preparation job: ${PREP_JOB_ID}"
+#     echo "Training job:    ${TRAIN_JOB_ID}"
+#     echo "Training dependency: afterok:${PREP_JOB_ID}"
+#
+#     The training job will remain pending until the preparation job finishes successfully. If
+#     preparation fails, training will not start.
+#
+#     Check both jobs:
+#
+#     squeue -j "${PREP_JOB_ID},${TRAIN_JOB_ID}" \
+#         -o "%.18i %.24j %.10T %.20R"
+#
+#     Monitor preparation:
+#
+#     tail -f "logs/qwen3-cpt-prepare-${PREP_JOB_ID}.out"
+#
+#     After preparation succeeds and training starts:
+#
+#     tail -f "logs/qwen3-8b-cpt-${TRAIN_JOB_ID}.out"
+#
+#     Outputs will be:
+#
+#     Tokenized dataset:
+#     ~/scratch/legal_data_process/datasets/CPT-tokenized/CPT-V2-Legislation-3B-Qwen3
+#
+#     Final model:
+#     ~/scratch/llms_model/lexlegal_llms/cpt-model/Qwen-Lex-Legal-CPT-using-Legislation-3B
+#
+#     Checkpoints:
+#     ~/scratch/llms_model/lexlegal_llms/checkpoints/Qwen-Lex-Legal-CPT-using-Legislation-3B
+#
+#     done 11:39 PM
