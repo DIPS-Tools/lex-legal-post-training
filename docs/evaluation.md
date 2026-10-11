@@ -5,7 +5,7 @@
 This evaluation measures what legal continued pretraining (CPT) changes before supervised fine-tuning. It compares:
 
 - `Qwen3-8B-Base`; and
-- `Qwen3-8B-CPT-Proportional-5B`, the checkpoint produced from the 5B-token CPT mixture.
+- `Qwen3-8B-CPT-Legislation-3B`, the checkpoint produced from the legislation-focused 3B-token CPT mixture.
 
 The two entry points are intentionally thin wrappers around one implementation:
 
@@ -29,12 +29,30 @@ The default evaluation root is:
 /home/mh1f25/scratch/legal_data_process/datasets/evaluation
 ```
 
-The evaluator uses:
+The evaluator uses three separately reported benchmarks:
 
-1. **Legal MMLU**: only `international_law`, `professional_law`, and `jurisprudence`. Test rows are scored; each subject's dev rows are used only as in-context demonstrations.
+1. **Original LegalBench**: each local `test.tsv` row is rendered with the task's pinned official `base_prompt.txt`; these prompts already contain the task demonstrations. Generations are scored by the pinned official `evaluation.py`. `rule_qa` remains manual-only, as specified upstream.
 2. **LegalBench-Instruct**: the already-curated `inputs` prompt is passed to the model as stored. The code does not add a second instruction template.
+3. **Legal MMLU**: only `international_law`, `professional_law`, and `jurisprudence`. Test rows are scored; each subject's dev rows are used only as in-context demonstrations.
 
-The original LegalBench checkout under `datasets/evaluation/legalbench` is not read by these scripts. The scripts evaluate the converted LegalBench-Instruct table under `legalbench_instruct/data`. Perplexity evaluation is separate and remains available through `scripts/evaluation/evaluate_cpt_perplexity.py`.
+The Hugging Face LegalBench snapshot under `datasets/evaluation/legalbench` supplies test data and `task_metadata.json`. A separate pinned HazyResearch checkout under `datasets/evaluation/legalbench_official` supplies official base prompts and scoring code. LegalBench-Instruct comes from `legalbench_instruct/data`. Perplexity evaluation is separate and remains available through `scripts/evaluation/evaluate_cpt_perplexity.py`.
+
+An `evaluation_ready` directory is intentionally not created. Original LegalBench templates are rendered dynamically, LegalBench-Instruct already stores complete prompts in `inputs`, and MMLU prompts are assembled from canonical `dev` and `test` records. Prompt construction and tokenization happen at runtime so the same immutable evaluation data can be used for base, CPT, and later SFT protocols without duplicating or silently drifting datasets.
+
+The pinned official LegalBench checkout used when this note was updated is commit:
+
+```text
+b46bf4ffae90524b2b72aaa30e7745fe9db64481
+```
+
+If it is absent, create it once and do not pull a different revision between model runs:
+
+```bash
+git clone https://github.com/HazyResearch/legalbench.git \
+  "${HOME}/scratch/legal_data_process/datasets/evaluation/legalbench_official"
+git -C "${HOME}/scratch/legal_data_process/datasets/evaluation/legalbench_official" \
+  checkout b46bf4ffae90524b2b72aaa30e7745fe9db64481
+```
 
 Input filenames may be JSONL or Parquet. JSONL is preferred when both exist. Every consumed input file is SHA256-hashed in the result metadata.
 
@@ -110,7 +128,7 @@ Defaults are:
 | Entry point | Model | Output |
 |---|---|---|
 | `evaluation_base_model.py` | `/home/mh1f25/scratch/llms_model/lexlegal_llms/base/Qwen3-8B-Base` | `results/evaluation/Qwen3-8B-Base` |
-| `evaluation_cpted_model.py` | `/home/mh1f25/scratch/llms_model/lexlegal_llms/cpt-model/Qwen-Lex-Legal-CPT-using-Proportional-5B` | `results/evaluation/Qwen3-8B-CPT-Proportional-5B` |
+| `evaluation_cpted_model.py` | `/home/mh1f25/scratch/llms_model/lexlegal_llms/cpt-model/Qwen-Lex-Legal-CPT-using-Legislation-3B` | `results/evaluation/Qwen3-8B-CPT-Legislation-3B` |
 
 Override either location with `--model-path` or `--output-dir`. A model directory must contain `config.json`.
 
@@ -123,6 +141,10 @@ mmlu/
 ├── metrics/<subject>.json
 └── summary.json
 legalbench/
+├── predictions/<task>.jsonl
+├── task_metrics/<task>.json
+└── summary.json
+legalbench_instruct/
 ├── predictions/<task>.jsonl
 ├── task_metrics/<task>.json
 ├── manifests/<view>_{retained,excluded}.jsonl
@@ -138,9 +160,10 @@ Activate the same environment used by the project, then verify imports and paths
 
 ```bash
 cd /home/mh1f25/scratch/lex-legal-post-training
-conda activate legal-data-process
+conda activate lex_legal_rl_post_training_env
 
-python -c "import torch, transformers, pyarrow; print(torch.__version__, transformers.__version__, torch.cuda.is_available())"
+python -m pip install nltk
+python -c "import torch, transformers, pyarrow, sklearn, nltk; print(torch.__version__, transformers.__version__, torch.cuda.is_available())"
 test -f /home/mh1f25/scratch/llms_model/lexlegal_llms/base/Qwen3-8B-Base/config.json
 test -f /home/mh1f25/scratch/legal_data_process/datasets/evaluation/legalbench_instruct/data/train-00000-of-00001.jsonl
 ```
@@ -149,13 +172,20 @@ The evaluator requires CUDA and loads weights as BF16 with `device_map="auto"`. 
 
 ## 7. Recommended execution order
 
+All commands below use these exact checkpoints:
+
+```text
+Base: /home/mh1f25/scratch/llms_model/lexlegal_llms/base/Qwen3-8B-Base
+CPT:  /home/mh1f25/scratch/llms_model/lexlegal_llms/cpt-model/Qwen-Lex-Legal-CPT-using-Legislation-3B
+```
+
 ### 7.1 Run a small smoke test
 
 Use a disposable output directory. This confirms model loading, prompt construction, scoring, and output writing without running the complete benchmark:
 
 ```bash
 python scripts/evaluation/evaluation_base_model.py \
-  --benchmarks mmlu legalbench \
+  --benchmarks mmlu legalbench legalbench_instruct \
   --mmlu-subject jurisprudence \
   --legalbench-task abercrombie \
   --example-limit 2 \
@@ -165,28 +195,66 @@ python scripts/evaluation/evaluation_base_model.py \
 
 `--example-limit` limits scored rows per subject/task. LegalBench task mode and candidate labels are still inferred from the complete task, so the smoke limit cannot accidentally change the scoring protocol.
 
-### 7.2 Evaluate the base model
+### 7.2 Evaluate the base model through Slurm
 
 ```bash
-python scripts/evaluation/evaluation_base_model.py
+mkdir -p logs
+sbatch scripts/evaluation/submit_evaluation.sh base
 ```
 
-### 7.3 Evaluate the CPT checkpoint
+### 7.3 Evaluate the CPT checkpoint through Slurm
 
 Run this only after the CPT checkpoint is complete and loadable:
 
 ```bash
-python scripts/evaluation/evaluation_cpted_model.py
+mkdir -p logs
+sbatch scripts/evaluation/submit_evaluation.sh cpt
 ```
 
 If the CPT checkpoint is at a different path:
 
 ```bash
-python scripts/evaluation/evaluation_cpted_model.py \
-  --model-path /absolute/path/to/final-cpt-checkpoint
+sbatch scripts/evaluation/submit_evaluation.sh cpt \
+  --model-path /absolute/path/to/final-cpt-checkpoint \
+  --output-dir results/evaluation/custom-cpt
 ```
 
-The two full commands must use identical values for all settings other than model label, model path, and output directory. In particular, keep `--num-fewshot`, `--candidate-score`, attention implementation, context limit, and benchmark selection fixed.
+Both commands run all three benchmarks by default. They must use identical values for all settings other than model label, model path, and output directory. In particular, keep `--num-fewshot`, `--candidate-score`, attention implementation, context limit, generation budget, and benchmark selection fixed.
+
+The explicit equivalent commands are:
+
+```bash
+sbatch scripts/evaluation/submit_evaluation.sh base \
+  --benchmarks legalbench legalbench_instruct mmlu \
+  --attn-implementation flash_attention_2
+
+sbatch scripts/evaluation/submit_evaluation.sh cpt \
+  --benchmarks legalbench legalbench_instruct mmlu \
+  --attn-implementation flash_attention_2
+```
+
+### 7.4 Safer benchmark-split submissions
+
+Original LegalBench and LegalBench-Instruct each contain roughly 90,000 test
+examples. If one combined job risks reaching the 60-hour Slurm limit, submit
+each benchmark separately. Distinct output roots prevent concurrent jobs from
+overwriting `evaluation_summary.json`:
+
+```bash
+for benchmark in legalbench legalbench_instruct mmlu; do
+  sbatch scripts/evaluation/submit_evaluation.sh base \
+    --benchmarks "${benchmark}" \
+    --output-dir "results/evaluation/Qwen3-8B-Base-${benchmark}"
+
+  sbatch scripts/evaluation/submit_evaluation.sh cpt \
+    --benchmarks "${benchmark}" \
+    --output-dir "results/evaluation/Qwen3-8B-CPT-Legislation-3B-${benchmark}"
+done
+```
+
+Use the same split strategy later for SFT. Do not combine LegalBench and
+LegalBench-Instruct scores into one average because they are related benchmark
+variants rather than independent datasets.
 
 ## 8. Useful options
 

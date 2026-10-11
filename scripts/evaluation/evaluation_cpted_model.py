@@ -16,16 +16,15 @@ from src.evaluation.runner import cli  # noqa: E402
 
 DEFAULT_MODEL = Path(
     "/home/mh1f25/scratch/llms_model/lexlegal_llms/cpt-model/"
-    "Qwen-Lex-Legal-CPT-using-Proportional-5B"
+    "Qwen-Lex-Legal-CPT-using-Legislation-3B"
 )
-DEFAULT_OUTPUT = PROJECT_ROOT / "results/evaluation/Qwen3-8B-CPT-Proportional-5B"
+DEFAULT_OUTPUT = PROJECT_ROOT / "results/evaluation/Qwen3-8B-CPT-Legislation-3B"
 
 
 if __name__ == "__main__":
     cli(
         default_model=DEFAULT_MODEL,
         default_output=DEFAULT_OUTPUT,
-        default_label="Qwen3-8B-CPT-Proportional-5B",
+        default_label="Qwen3-8B-CPT-Legislation-3B",
         description=__doc__ or "Evaluate the continued-pretrained model",
     )
-

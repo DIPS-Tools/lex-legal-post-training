@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import csv
+import importlib.util
 import json
 import os
 import platform
 import random
+import re
 import subprocess
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
@@ -65,8 +68,14 @@ def add_common_arguments(
     parser.add_argument(
         "--benchmarks",
         nargs="+",
-        choices=("mmlu", "legalbench"),
-        default=["mmlu", "legalbench"],
+        choices=("mmlu", "legalbench", "legalbench_instruct"),
+        default=["mmlu", "legalbench", "legalbench_instruct"],
+    )
+    parser.add_argument(
+        "--legalbench-official-root",
+        type=Path,
+        default=None,
+        help="Pinned HazyResearch/legalbench checkout containing tasks/*/base_prompt.txt",
     )
     parser.add_argument("--num-fewshot", type=int, default=5)
     parser.add_argument("--batch-size", type=int, default=8)
@@ -398,6 +407,155 @@ def evaluate_legalbench(
     return summary
 
 
+def _load_official_legalbench_evaluator(repository: Path) -> Any:
+    evaluation_path = repository / "evaluation.py"
+    if not evaluation_path.is_file():
+        raise EvaluationError(f"Official LegalBench evaluator is missing: {evaluation_path}")
+    spec = importlib.util.spec_from_file_location("pinned_legalbench_evaluation", evaluation_path)
+    if spec is None or spec.loader is None:
+        raise EvaluationError(f"Unable to load official LegalBench evaluator: {evaluation_path}")
+    module = importlib.util.module_from_spec(spec)
+    try:
+        spec.loader.exec_module(module)
+    except ImportError as exc:
+        raise RuntimeError(
+            "Official LegalBench scoring requires scikit-learn and nltk; "
+            "install them in the evaluation environment"
+        ) from exc
+    return module
+
+
+def _read_tsv(path: Path) -> list[dict[str, str]]:
+    if not path.is_file():
+        raise EvaluationError(f"LegalBench test file is missing: {path}")
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
+        rows = [dict(row) for row in csv.DictReader(handle, delimiter="\t")]
+    if not rows:
+        raise EvaluationError(f"LegalBench test file is empty: {path}")
+    return rows
+
+
+def _render_legalbench_prompt(template: str, record: Mapping[str, Any]) -> str:
+    prompt = template
+    for key, value in record.items():
+        prompt = prompt.replace("{{" + key + "}}", str(value))
+    if "{{" in prompt or "}}" in prompt:
+        unresolved = sorted(set(re.findall(r"\{\{([^{}]+)\}\}", prompt)))
+        raise EvaluationError(f"Unresolved LegalBench prompt fields: {unresolved}")
+    return prompt
+
+
+def evaluate_legalbench_official(
+    evaluator: ModelEvaluator,
+    *,
+    data_root: Path,
+    repository: Path,
+    output_dir: Path,
+    model_label: str,
+    requested_tasks: Sequence[str],
+    max_new_tokens: int,
+    example_limit: int | None,
+) -> dict[str, Any]:
+    """Evaluate the original LegalBench test splits with pinned base prompts."""
+
+    metadata_path = data_root / "task_metadata.json"
+    if not metadata_path.is_file():
+        raise EvaluationError(f"LegalBench task metadata is missing: {metadata_path}")
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    task_names = sorted(metadata)
+    if requested_tasks:
+        unknown = set(requested_tasks) - set(task_names)
+        if unknown:
+            raise EvaluationError(f"Unknown LegalBench tasks requested: {sorted(unknown)}")
+        task_names = list(dict.fromkeys(requested_tasks))
+
+    official = _load_official_legalbench_evaluator(repository)
+    task_metrics: dict[str, Any] = {}
+    automated_metrics: dict[str, Any] = {}
+    input_files: list[dict[str, str]] = [
+        {"path": str(metadata_path), "sha256": sha256_file(metadata_path)},
+        {
+            "path": str(repository / "evaluation.py"),
+            "sha256": sha256_file(repository / "evaluation.py"),
+        },
+    ]
+
+    for task_number, task_name in enumerate(task_names, start=1):
+        prompt_path = repository / "tasks" / task_name / "base_prompt.txt"
+        test_path = data_root / "data" / task_name / "test.tsv"
+        if not prompt_path.is_file():
+            raise EvaluationError(f"LegalBench base prompt is missing: {prompt_path}")
+        records = _read_tsv(test_path)
+        if example_limit is not None:
+            records = records[:example_limit]
+        template = prompt_path.read_text(encoding="utf-8")
+        prompts = [_render_legalbench_prompt(template, record) for record in records]
+        answers = [str(record["answer"]) for record in records]
+        print(
+            f"LegalBench task {task_number}/{len(task_names)}: {task_name} "
+            f"({len(records):,} examples)",
+            flush=True,
+        )
+        generations = evaluator.generate(prompts, max_new_tokens=max_new_tokens)
+        predictions = [
+            {
+                "model": model_label,
+                "benchmark": "legalbench",
+                "task_name": task_name,
+                "index": str(record.get("index", index)),
+                "gold": answer,
+                "raw_generation": generation,
+            }
+            for index, (record, answer, generation) in enumerate(
+                zip(records, answers, generations, strict=True)
+            )
+        ]
+        write_jsonl(output_dir / "predictions" / f"{task_name}.jsonl", predictions)
+
+        manual = task_name in getattr(official, "MANUAL_EVAL_TASKS", [])
+        score = None if manual else float(official.evaluate(task_name, generations, answers))
+        metrics = {
+            "task_name": task_name,
+            "task_type": "legalbench",
+            "examples": len(records),
+            "prompt_file": str(prompt_path),
+            "manual_evaluation_required": manual,
+            "primary_metric": "official_legalbench_score" if not manual else None,
+            "primary_score": score,
+        }
+        write_json(output_dir / "task_metrics" / f"{task_name}.json", metrics)
+        task_metrics[task_name] = metrics
+        if not manual:
+            automated_metrics[task_name] = metrics
+        input_files.extend(
+            {"path": str(path), "sha256": sha256_file(path)}
+            for path in (prompt_path, test_path)
+        )
+
+    summary = {
+        "tasks": len(task_metrics),
+        "automatically_scored_tasks": len(automated_metrics),
+        "examples": sum(value["examples"] for value in task_metrics.values()),
+        "macro_official_score": mean(
+            [float(value["primary_score"]) for value in automated_metrics.values()]
+        ),
+        "views": summarize_legalbench(automated_metrics),
+        "input_files": input_files,
+        "official_repository": {
+            "path": str(repository),
+            "git_commit": subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=repository,
+                check=True,
+                capture_output=True,
+                text=True,
+            ).stdout.strip(),
+        },
+    }
+    write_json(output_dir / "summary.json", summary)
+    return summary
+
+
 def run_evaluation(args: argparse.Namespace) -> dict[str, Any]:
     if args.num_fewshot < 0:
         raise EvaluationError("--num-fewshot cannot be negative")
@@ -408,6 +566,9 @@ def run_evaluation(args: argparse.Namespace) -> dict[str, Any]:
 
     model_path = args.model_path.expanduser().resolve()
     evaluation_root = args.evaluation_root.expanduser().resolve()
+    legalbench_official_root = (
+        args.legalbench_official_root or evaluation_root / "legalbench_official"
+    ).expanduser().resolve()
     output_dir = args.output_dir.expanduser().resolve()
     if not (model_path / "config.json").is_file():
         raise EvaluationError(f"Model config is missing: {model_path / 'config.json'}")
@@ -437,15 +598,26 @@ def run_evaluation(args: argparse.Namespace) -> dict[str, Any]:
             example_limit=args.example_limit,
         )
     if "legalbench" in args.benchmarks:
+        summaries["legalbench"] = evaluate_legalbench_official(
+            evaluator,
+            data_root=evaluation_root / "legalbench",
+            repository=legalbench_official_root,
+            output_dir=output_dir / "legalbench",
+            model_label=args.model_label,
+            requested_tasks=args.legalbench_task,
+            max_new_tokens=args.open_max_new_tokens,
+            example_limit=args.example_limit,
+        )
+    if "legalbench_instruct" in args.benchmarks:
         legalbench_path = find_split_file(
             evaluation_root / "legalbench_instruct" / "data",
             "train",
             prefer_jsonl=True,
         )
-        summaries["legalbench"] = evaluate_legalbench(
+        summaries["legalbench_instruct"] = evaluate_legalbench(
             evaluator,
             data_path=legalbench_path,
-            output_dir=output_dir / "legalbench",
+            output_dir=output_dir / "legalbench_instruct",
             model_label=args.model_label,
             candidate_mode=args.candidate_score,
             max_candidates=args.max_legalbench_candidates,
