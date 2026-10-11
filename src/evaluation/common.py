@@ -115,11 +115,24 @@ def find_split_file(directory: Path, split: str, *, prefer_jsonl: bool = True) -
 
 
 def answer_letter(record: Mapping[str, Any]) -> str:
+    """Return an MMLU answer as A-D for either supported source schema.
+
+    Hugging Face's Parquet representation stores the zero-based choice index in
+    ``answer``.  The locally converted JSONL representation stores the letter in
+    ``answer`` and also supplies ``answer_index``.  Accept both without changing
+    the evaluation data on disk.
+    """
     answer = record.get("answer")
     if isinstance(answer, str) and answer.upper() in {"A", "B", "C", "D"}:
         return answer.upper()
+    if isinstance(answer, int) and not isinstance(answer, bool) and 0 <= answer <= 3:
+        return "ABCD"[answer]
     answer_index = record.get("answer_index")
-    if isinstance(answer_index, int) and 0 <= answer_index <= 3:
+    if (
+        isinstance(answer_index, int)
+        and not isinstance(answer_index, bool)
+        and 0 <= answer_index <= 3
+    ):
         return "ABCD"[answer_index]
     raise EvaluationError(f"Invalid MMLU answer: {answer!r} / {answer_index!r}")
 
