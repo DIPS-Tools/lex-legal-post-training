@@ -92,6 +92,128 @@ For the test item the evaluator calculates the conditional log-likelihood of ` A
 
 Reported metrics are accuracy and balanced accuracy per subject, plus macro averages across the three subjects. The primary MMLU comparison should use macro accuracy.
 
+#### 3.2.1 Exact MMLU example from the local data
+
+The first test record in
+`datasets/evaluation/mmlu/jurisprudence/test-00000-of-00001.jsonl` is:
+
+```json
+{
+  "question": "Which statement best explains the purpose of Hart's distinction between 'being obliged' and 'having an obligation'?",
+  "choices": [
+    "It demonstrates the difference between the internal and the external aspect of a rule.",
+    "It refutes the natural lawyer' view of the role of morality in law.",
+    "It explains the nature of power-conferring rules.",
+    "It illuminates the concept of a rule."
+  ],
+  "answer": "D",
+  "answer_index": 3,
+  "subject": "jurisprudence"
+}
+```
+
+With the default `--num-fewshot 5`, the exact plain-text prompt constructed for
+this record is:
+
+```text
+The following are multiple-choice questions about jurisprudence.
+
+Question: Which position does Rawls claim is the least likely to be adopted by the POP (people in the original position)?
+A. The POP would choose equality above liberty.
+B. The POP would opt for the 'maximin' strategy.
+C. The POP would opt for the 'difference principle'.
+D. The POP would reject the 'system of natural liberty.'
+Answer: A
+
+Question: Functions of the law include all but which of the following?
+A. maximizing individual freedom
+B. providing a basis for compromise
+C. keeping the peace
+D. promoting the principles of the free enterprise system
+Answer: D
+
+Question: Which word best summarizes Weber's explanation of the development of formally rational law?
+A. Authority.
+B. Charisma.
+C. Co-operation.
+D. Capitalism.
+Answer: D
+
+Question: The ________ School of jurisprudence postulates that the law is based on what is "correct."
+A. Natural Law
+B. Analytical
+C. Historical
+D. Sociological
+Answer: A
+
+Question: Iverson Jewelers wrote a letter to Miller, 'We have received an exceptionally fine self winding Rolox watch which we will sell to you at a very favorable price.'
+A. The letter is an offer to sell
+B. A valid offer cannot be made by letter.
+C. The letter contains a valid offer which will terminate within a reasonable time.
+D. The letter lacks one of the essential elements of an offer.
+Answer: D
+
+Question: Which statement best explains the purpose of Hart's distinction between 'being obliged' and 'having an obligation'?
+A. It demonstrates the difference between the internal and the external aspect of a rule.
+B. It refutes the natural lawyer' view of the role of morality in law.
+C. It explains the nature of power-conferring rules.
+D. It illuminates the concept of a rule.
+Answer:
+```
+
+No chat or dialogue wrapper is added. The tokenizer receives this prompt with
+`add_special_tokens=False`. The evaluator then performs four conditional-
+likelihood calculations by appending one of these continuations (each includes
+the leading space):
+
+```text
+ A
+ B
+ C
+ D
+```
+
+Thus, the four scored sequences end in `Answer: A`, `Answer: B`, `Answer: C`,
+and `Answer: D`. The model's MMLU prediction is the letter whose continuation
+has the highest selected log-probability; it does not generate a sentence. For
+this record, the expected output is `D`, because `answer` is `D` and the
+zero-based `answer_index` is `3`. A correct saved prediction has the essential
+fields:
+
+```json
+{
+  "benchmark": "mmlu",
+  "subject": "jurisprudence",
+  "gold": "D",
+  "prediction": "D",
+  "correct": true
+}
+```
+
+The actual prediction record additionally contains all four candidate scores,
+their summed and mean log-probabilities, and token counts. The Parquet MMLU
+files store the zero-based integer directly in `answer` (for example,
+`"answer": 3`), while the converted JSONL files store the letter in `answer`
+and the integer in `answer_index`. The loader normalizes both representations
+to the same A-D label.
+
+To reproduce and inspect this exact prompt without loading a model, run from
+the project root:
+
+```bash
+python - <<'PY'
+from pathlib import Path
+from src.evaluation.common import build_mmlu_prompt, find_split_file, load_table
+
+root = Path.home() / "scratch/legal_data_process/datasets/evaluation/mmlu"
+subject = "jurisprudence"
+dev = load_table(find_split_file(root / subject, "dev", prefer_jsonl=False))
+test = load_table(find_split_file(root / subject, "test", prefer_jsonl=True))
+print(build_mmlu_prompt(subject, test[0], dev[:5]))
+print("Expected output:", test[0]["answer"])
+PY
+```
+
 ### 3.3 LegalBench-Instruct
 
 Each row's `inputs` value is already the complete prompt. The evaluator groups rows by `task_name` and resolves one task-level scoring configuration from the complete task:
@@ -99,7 +221,7 @@ Each row's `inputs` value is already the complete prompt. The evaluator groups r
 - If the task has 2 through 10 distinct gold labels, it is treated as closed-label classification. Every permitted label is scored by conditional likelihood. Balanced accuracy is the task's primary score; ordinary accuracy is also retained.
 - Otherwise it is treated as open generation. Decoding is greedy and the primary score is conservative normalized exact match. Normalization applies Unicode NFKC, removes a leading `Answer:`-style prefix, keeps the first line, collapses whitespace, and case-folds. It does not search an explanation for a convenient answer.
 
-The resolved mode and label set for every task are written to `legalbench/resolved_task_configuration.json`. Deriving candidate labels from the task schema is convenient for the current converted dataset, but it is not a substitute for a fixed official task configuration. Before publishing final results, inspect this file once, freeze it with the experiment artifacts, and use the same configuration for both models.
+The resolved mode and label set for every task are written to `legalbench_instruct/resolved_task_configuration.json`. Deriving candidate labels from the task schema is convenient for the current converted dataset, but it is not a substitute for a fixed official task configuration. Before publishing final results, inspect this file once, freeze it with the experiment artifacts, and use the same configuration for both models.
 
 The LegalBench headline is the unweighted macro average of task primary scores. This prevents large tasks from dominating the benchmark. The evaluator also reports macro scores by `task_type`.
 

@@ -106,7 +106,11 @@ module load "${CUDA_MODULE_NAME}"
 
 export CUDA_HOME="${CUDA_TOOLKIT_ROOT}"
 export PATH="${CUDA_HOME}/bin:${PATH}"
-export LD_LIBRARY_PATH="${CUDA_HOME}/lib64:${LD_LIBRARY_PATH:-}"
+# GCC 11's module runtime is too old for some Conda libraries (notably ICU 78,
+# imported through Python's sqlite3/NLTK stack).  Keep the compiler module for
+# CUDA/FlashAttention compatibility, but prefer the Conda environment's newer,
+# backward-compatible C++ runtime when launching Python.
+export LD_LIBRARY_PATH="${CONDA_PREFIX}/lib:${CUDA_HOME}/lib64:${LD_LIBRARY_PATH:-}"
 export PYTHONUNBUFFERED=1
 export PYTHONNOUSERSITE=1
 export TOKENIZERS_PARALLELISM=false
@@ -164,11 +168,12 @@ done
 python --version
 python - <<'PY'
 import os
+import torch
+import transformers
+import sqlite3
 import nltk
 import pyarrow
 import sklearn
-import torch
-import transformers
 
 print("PyTorch:", torch.__version__)
 print("Transformers:", transformers.__version__)

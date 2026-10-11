@@ -55,7 +55,7 @@ class ModelEvaluator:
             self.tokenizer.pad_token = self.tokenizer.eos_token
         self.model = AutoModelForCausalLM.from_pretrained(
             model_path,
-            torch_dtype=torch.bfloat16,
+            dtype=torch.bfloat16,
             attn_implementation=attn_implementation,
             device_map="auto",
             local_files_only=local_files_only,
@@ -152,4 +152,3 @@ class ModelEvaluator:
         finally:
             self.tokenizer.padding_side = original_padding_side
         return outputs
-

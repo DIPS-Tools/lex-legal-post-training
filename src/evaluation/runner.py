@@ -419,8 +419,9 @@ def _load_official_legalbench_evaluator(repository: Path) -> Any:
         spec.loader.exec_module(module)
     except ImportError as exc:
         raise RuntimeError(
-            "Official LegalBench scoring requires scikit-learn and nltk; "
-            "install them in the evaluation environment"
+            "Failed to import the official LegalBench evaluator or one of its "
+            f"dependencies: {exc}. Verify scikit-learn and NLTK, and check that "
+            "the active C++ runtime is compatible with the Conda environment."
         ) from exc
     return module
 
