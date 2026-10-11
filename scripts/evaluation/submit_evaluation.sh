@@ -6,14 +6,14 @@
 # Arguments after base/cpt are forwarded to the Python evaluator.
 #SBATCH --mail-user=miao.hu@soton.ac.uk
 #SBATCH --mail-type=BEGIN,END,FAIL
-#SBATCH --mem=64G
+#SBATCH --mem=128G
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --partition=i7_h200
 #SBATCH --gres=gpu:1
 #SBATCH --time=60:00:00
-#SBATCH --job-name=qwen3-legal-eval
+#SBATCH --job-name=eval-qwen-legal
 #SBATCH --output=logs/qwen3-legal-eval-%j.out
 
 set -euo pipefail
