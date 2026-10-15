@@ -7,3 +7,4 @@
 /.python-version
 /pyproject.toml
 /datasets/odrl-dataset/odrl-to-text-dataset-v1/
+/results/
