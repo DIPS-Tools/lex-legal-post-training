@@ -446,6 +446,43 @@ def _render_legalbench_prompt(template: str, record: Mapping[str, Any]) -> str:
     return prompt
 
 
+_LEGALBENCH_ANSWER_PREFIX = re.compile(r"^(?:answer|a)\s*:\s*", flags=re.IGNORECASE)
+
+
+def extract_legalbench_exact_match_answer(generation: str) -> str:
+    """Extract the answer line used by LegalBench exact-match tasks.
+
+    LegalBench base prompts end at an answer cue, but causal language models can
+    continue by generating another few-shot ``Q:`` block after giving the answer.
+    The official exact-match scorer normalizes the entire supplied string, so that
+    otherwise-correct continuation is counted as wrong.  Preserve the raw output
+    for auditing and score only its first non-empty answer line.  Some models echo
+    an ``Answer:`` or ``A:`` prefix; remove that cue without otherwise modifying
+    the predicted label.
+    """
+
+    for line in str(generation).splitlines():
+        answer = line.strip()
+        if answer:
+            return _LEGALBENCH_ANSWER_PREFIX.sub("", answer, count=1).strip()
+    return ""
+
+
+def prepare_legalbench_generations_for_scoring(
+    task_name: str,
+    generations: Sequence[str],
+    exact_match_tasks: set[str] | frozenset[str],
+) -> tuple[list[str], str]:
+    """Return task-appropriate outputs and the recorded extraction method."""
+
+    if task_name in exact_match_tasks:
+        return (
+            [extract_legalbench_exact_match_answer(value) for value in generations],
+            "first_nonempty_line",
+        )
+    return [str(value) for value in generations], "raw_generation"
+
+
 def evaluate_legalbench_official(
     evaluator: ModelEvaluator,
     *,
@@ -471,6 +508,14 @@ def evaluate_legalbench_official(
         task_names = list(dict.fromkeys(requested_tasks))
 
     official = _load_official_legalbench_evaluator(repository)
+    exact_match_tasks = frozenset(
+        getattr(official, "EXACT_MATCH_BALANCED_ACC_TASKS", ())
+    )
+    if not exact_match_tasks:
+        raise RuntimeError(
+            "The pinned LegalBench evaluator does not expose "
+            "EXACT_MATCH_BALANCED_ACC_TASKS; refusing to apply ambiguous answer extraction"
+        )
     task_metrics: dict[str, Any] = {}
     automated_metrics: dict[str, Any] = {}
     input_files: list[dict[str, str]] = [
@@ -498,6 +543,11 @@ def evaluate_legalbench_official(
             flush=True,
         )
         generations = evaluator.generate(prompts, max_new_tokens=max_new_tokens)
+        scoring_generations, answer_extraction = prepare_legalbench_generations_for_scoring(
+            task_name,
+            generations,
+            exact_match_tasks,
+        )
         predictions = [
             {
                 "model": model_label,
@@ -506,20 +556,27 @@ def evaluate_legalbench_official(
                 "index": str(record.get("index", index)),
                 "gold": answer,
                 "raw_generation": generation,
+                "scored_generation": scored_generation,
+                "answer_extraction": answer_extraction,
             }
-            for index, (record, answer, generation) in enumerate(
-                zip(records, answers, generations, strict=True)
+            for index, (record, answer, generation, scored_generation) in enumerate(
+                zip(records, answers, generations, scoring_generations, strict=True)
             )
         ]
         write_jsonl(output_dir / "predictions" / f"{task_name}.jsonl", predictions)
 
         manual = task_name in getattr(official, "MANUAL_EVAL_TASKS", [])
-        score = None if manual else float(official.evaluate(task_name, generations, answers))
+        score = (
+            None
+            if manual
+            else float(official.evaluate(task_name, scoring_generations, answers))
+        )
         metrics = {
             "task_name": task_name,
             "task_type": "legalbench",
             "examples": len(records),
             "prompt_file": str(prompt_path),
+            "answer_extraction": answer_extraction,
             "manual_evaluation_required": manual,
             "primary_metric": "official_legalbench_score" if not manual else None,
             "primary_score": score,

@@ -10,9 +10,43 @@ from src.evaluation.common import (
     normalize_answer,
     summarize_legalbench,
 )
+from src.evaluation.runner import (
+    extract_legalbench_exact_match_answer,
+    prepare_legalbench_generations_for_scoring,
+)
 
 
 class EvaluationTests(unittest.TestCase):
+    def test_legalbench_exact_match_extraction_uses_first_nonempty_line(self) -> None:
+        generation = "  generic  \n\nQ: The next few-shot question?\nA: descriptive"
+        self.assertEqual(extract_legalbench_exact_match_answer(generation), "generic")
+
+    def test_legalbench_exact_match_extraction_removes_answer_cue(self) -> None:
+        self.assertEqual(
+            extract_legalbench_exact_match_answer("\n Answer: Yes\nExplanation"),
+            "Yes",
+        )
+        self.assertEqual(extract_legalbench_exact_match_answer("A: No"), "No")
+        self.assertEqual(extract_legalbench_exact_match_answer("\n\t\n"), "")
+
+    def test_legalbench_scoring_extraction_is_task_aware(self) -> None:
+        raw = [" generic\n\nQ: continued", "Answer: descriptive\nExplanation"]
+        parsed, method = prepare_legalbench_generations_for_scoring(
+            "abercrombie",
+            raw,
+            frozenset({"abercrombie"}),
+        )
+        self.assertEqual(parsed, ["generic", "descriptive"])
+        self.assertEqual(method, "first_nonempty_line")
+
+        preserved, method = prepare_legalbench_generations_for_scoring(
+            "citation_prediction_open",
+            raw,
+            frozenset({"abercrombie"}),
+        )
+        self.assertEqual(preserved, raw)
+        self.assertEqual(method, "raw_generation")
+
     def test_mmlu_prompt_contains_demonstration_and_unanswered_test(self) -> None:
         demonstration = {
             "question": "Demo?",
