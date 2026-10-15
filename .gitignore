@@ -1,5 +1,5 @@
 
-/docs/
+/docs/*
 !/docs/evaluation.md
 !/docs/cpt_model_evaluation_comparison.md
 /requirements-app.txt
