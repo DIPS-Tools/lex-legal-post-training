@@ -48,3 +48,61 @@ srun --cpu-bind=none torchrun --standalone --nnodes=1 --nproc_per_node="${GPUS_P
     --output-dir "${HOME}/scratch/llms_model/lexlegal_llms/sft-model/${MODEL_RUN_NAME}" \
     --checkpoint-dir "${HOME}/scratch/llms_model/lexlegal_llms/checkpoints/${MODEL_RUN_NAME}" \
     "$@"
+
+
+
+
+# cd "${HOME}/scratch/dips_project/lex-legal-post-training"
+#  mkdir -p logs
+#  PROJECT_ROOT="$(pwd)"
+#
+#  PREP_JOB_ID="$(
+#      sbatch --parsable \
+#          --export="ALL,PROJECT_ROOT=${PROJECT_ROOT}" \
+#          scripts/training/submit_prepare_sft.sh
+#  )"
+#  PREP_JOB_ID="${PREP_JOB_ID%%;*}"
+#
+#  SFT_JOB_ID="$(
+#      sbatch --parsable \
+#          --dependency="afterok:${PREP_JOB_ID}" \
+#          --export="ALL,PROJECT_ROOT=${PROJECT_ROOT}" \
+#          scripts/training/submit_train_sft.sh \
+#          --attn-implementation flash_attention_2
+#  )"
+#
+#  echo "Preparation: ${PREP_JOB_ID}"
+#  echo "SFT training: ${SFT_JOB_ID}"
+
+
+# -------------------------
+# If SFT data preparation has already completed, reuse it and submit training directly:
+#
+#  cd "${HOME}/scratch/dips_project/lex-legal-post-training"
+#
+#  PROJECT_ROOT="$(pwd)"
+#  MODEL_PATH="${HOME}/scratch/llms_model/lexlegal_llms/cpt-model/Qwen-Lex-Legal-CPT-using-Proportional-5B-FA2"
+#  MODEL_RUN_NAME="Qwen-Lex-Legal-CPT-using-Proportional-5B-FA2-SFT"
+#
+#  SFT_JOB_ID="$(
+#      sbatch --parsable \
+#          --export="ALL,PROJECT_ROOT=${PROJECT_ROOT},MODEL_PATH=${MODEL_PATH},MODEL_RUN_NAME=${MODEL_RUN_NAME}" \
+#          scripts/training/submit_train_sft.sh \
+#          --attn-implementation flash_attention_2
+#  )"
+#
+#  echo "Proportional-5B-FA2 SFT job: ${SFT_JOB_ID}"
+#
+#  If preparation is still running, add this option before the script path:
+#
+#  --dependency="afterok:${PREP_JOB_ID}" \
+#
+#  The CPT model must have finished saving before SFT starts.
+#
+#  Final model:
+#
+#  ~/scratch/llms_model/lexlegal_llms/sft-model/Qwen-Lex-Legal-CPT-using-Proportional-5B-FA2-SFT
+#
+#  Checkpoints:
+#
+#  ~/scratch/llms_model/lexlegal_llms/checkpoints/Qwen-Lex-Legal-CPT-using-Proportional-5B-FA2-SFT

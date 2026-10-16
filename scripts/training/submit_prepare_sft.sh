@@ -2,7 +2,7 @@
 # Submit from the project root: mkdir -p logs; sbatch scripts/training/submit_prepare_sft.sh
 #SBATCH --mail-user=miao.hu@soton.ac.uk
 #SBATCH --mail-type=BEGIN,END,FAIL
-#SBATCH --mem=64G
+#SBATCH --mem=0
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
