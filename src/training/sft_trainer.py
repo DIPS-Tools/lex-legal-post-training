@@ -23,10 +23,12 @@ def parse_args(argv=None):
     p.add_argument('--tokenizer-path', type=Path, help='Preparation tokenizer; defaults to --model-path')
     p.add_argument('--data-root', type=Path, default=DATA_ROOT / 'SFT-datasets')
     p.add_argument('--mmlu-root', type=Path, default=DATA_ROOT / 'evaluation/mmlu')
-    p.add_argument('--prepared-dir', type=Path, default=DATA_ROOT / 'SFT-processed/LawInstruct-General-1.2M-Qwen3')
+    p.add_argument('--prepared-dir', type=Path, default=DATA_ROOT / 'SFT-processed/LawInstruct-General-Balanced-Qwen3')
     p.add_argument('--prepare-only', action='store_true', help='CPU preparation; no model weights loaded')
-    p.add_argument('--legal-examples', type=int, default=600000)
-    p.add_argument('--general-examples', type=int, default=600000)
+    p.add_argument('--legal-examples', type=int, default=None,
+                   help='Omit to use all eligible LawInstruct training examples after validation holdout')
+    p.add_argument('--general-examples', type=int, default=None,
+                   help='Omit to match the legal count; an explicit value must match it (50:50)')
     p.add_argument('--validation-fraction', type=float, default=0.01)
     p.add_argument('--validation-examples-per-domain', type=int, default=2000)
     p.add_argument('--max-length', type=int, default=4096)
@@ -58,8 +60,10 @@ def parse_args(argv=None):
                 'learning_rate', 'logging_steps', 'eval_steps', 'save_steps', 'save_total_limit'):
         if getattr(args, key) <= 0:
             p.error(f'--{key.replace("_", "-")} must be positive')
-    if args.legal_examples < 0 or args.general_examples < 0 or args.legal_examples + args.general_examples == 0:
-        p.error('Example quotas must be nonnegative and total > 0')
+    if any(value is not None and value <= 0 for value in (args.legal_examples, args.general_examples)):
+        p.error('Explicit example quotas must be positive')
+    if args.legal_examples is not None and args.general_examples is not None and args.legal_examples != args.general_examples:
+        p.error('Legal and general quotas must match for a 50:50 mixture')
     if not 0 < args.validation_fraction < 1 or not 0 <= args.warmup_ratio < 1:
         p.error('validation-fraction must be in (0,1); warmup-ratio in [0,1)')
     if args.max_records_per_source < 0 or args.dataloader_num_workers < 0 or args.max_steps == 0 or args.max_steps < -1:

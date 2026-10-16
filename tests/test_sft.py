@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 from src.training.sft_data import (CHAT_TEMPLATE, MmluGuard, SOURCES, SUBJECTS,
     allocate, configure_tokenizer, encode_messages, normalize_record, prepare,
-    read_rows, tokenizer_signature, AssistantCollator)
+    read_rows, tokenizer_signature, AssistantCollator, resolve_training_targets)
 from src.training.sft_trainer import parse_args, resume_path
 
 
@@ -28,6 +28,21 @@ def tiny_tokenizer():
 
 
 class SftTests(unittest.TestCase):
+    def test_automatic_balanced_targets(self):
+        args = parse_args([])
+        self.assertIsNone(args.legal_examples)
+        self.assertIsNone(args.general_examples)
+        self.assertEqual(resolve_training_targets(None, None, {'legal': 37, 'general': 100}),
+                         {'legal': 37, 'general': 37})
+        self.assertEqual(resolve_training_targets(20, None, {'legal': 37, 'general': 100}),
+                         {'legal': 20, 'general': 20})
+        with self.assertRaisesRegex(ValueError, 'shortfall 7'):
+            resolve_training_targets(None, None, {'legal': 37, 'general': 30})
+        with self.assertRaisesRegex(ValueError, 'equal quotas'):
+            resolve_training_targets(None, 10, {'legal': 37, 'general': 100})
+        with self.assertRaisesRegex(ValueError, 'both pools'):
+            resolve_training_targets(None, None, {'legal': 0, 'general': 100})
+
     def test_adapters(self):
         law = dict(dataset_name='Example', subset_name='qa', instruction_language='en',
             prompt_language='en', answer_language='en', instruction='Answer', prompt='Question?', answer='Yes')
@@ -188,6 +203,16 @@ class SftTests(unittest.TestCase):
             self.assertEqual(sum(v for k,v in manifest['counts'].items() if k.endswith('/mmlu_overlap')),5)
             with self.assertRaisesRegex(ValueError,'empty'):
                 prepare(args,tiny_tokenizer())
+            args.prepared_dir = root / 'prepared-all'
+            args.legal_examples = None
+            args.general_examples = None
+            automatic = prepare(args, tiny_tokenizer())
+            eligible = sum(automatic['quotas']['legal/train']['available'].values())
+            self.assertGreater(eligible, 10)
+            self.assertEqual(automatic['statistics']['train']['legal/examples'], eligible)
+            self.assertEqual(automatic['statistics']['train']['general/examples'], eligible)
+            self.assertEqual(automatic['quotas']['legal/train']['selected'],
+                             automatic['quotas']['legal/train']['available'])
 
 
 if __name__ == '__main__':

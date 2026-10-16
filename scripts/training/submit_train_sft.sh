@@ -31,7 +31,7 @@ unset _PYTHON_SYSCONFIGDATA_NAME FLASH_ATTENTION_FORCE_BUILD
 export GPUS_PER_NODE="${GPUS_PER_NODE:-4}"
 MODEL_PATH="${MODEL_PATH:-${HOME}/scratch/llms_model/lexlegal_llms/cpt-model/Qwen-Lex-Legal-CPT-using-Legislation-3B}"
 MODEL_RUN_NAME="${MODEL_RUN_NAME:-$(basename "${MODEL_PATH}")-SFT}"
-PREPARED_DIR="${PREPARED_DIR:-${HOME}/scratch/legal_data_process/datasets/SFT-processed/LawInstruct-General-1.2M-Qwen3}"
+PREPARED_DIR="${PREPARED_DIR:-${HOME}/scratch/legal_data_process/datasets/SFT-processed/LawInstruct-General-Balanced-Qwen3}"
 echo "SFT job ${SLURM_JOB_ID:-manual} on $(hostname)"
 echo "Model: ${MODEL_PATH}; data: ${PREPARED_DIR}; run: ${MODEL_RUN_NAME}"
 python - <<'PY'

@@ -27,7 +27,7 @@ Checkpoints use a separate `checkpoints/Qwen-Lex-Legal-CPT-using-Legislation-3B-
 
 [SaulLM-7B Section 3.2](https://arxiv.org/html/2403.03883v1#S3.SS2) uses SlimOrca, MetaMathQA, UltraChat and Glaive Code Assistant v2 for its general instruction pool, reporting 600K curated general instructions. Its legal instructions are synthetic conversations.
 
-Here, public English LawInstruct supplies the legal pool. The default **600K legal + 600K general examples** follows this project's `legal_data_process/docs/SFT_data_generation.md` plan. The equal legal/general mixture, learning rate and epoch settings below are experimental choices; they are not claimed to reproduce SaulLM exactly. Record this distinction in the paper.
+Here, public English LawInstruct supplies the legal pool. By default, preparation uses **all eligible LawInstruct training examples and the same number of general examples** (50:50 by example count). This updates the earlier fixed 600K+600K planning default. Set `--legal-examples 600000` to reproduce that smaller budget; the omitted general quota automatically matches it. The equal legal/general mixture, learning rate and epoch settings below are experimental choices; they are not claimed to reproduce SaulLM exactly. Record this distinction in the paper.
 
 ## Data preparation behavior
 
@@ -50,6 +50,8 @@ SQLite on shared storage holds candidates and tokenized records, so all of LawIn
 Validation is assigned by deterministic group hash before sampling: LawInstruct raw prompt, MetaMath original_question when present, otherwise conversation user text. Exact prompt overlap propagates validation membership across sources and groups. This does not guarantee grouping every paraphrase or every task derived from the same underlying document.
 
 Legal quotas are proportional to eligible source/subset counts; general quotas are proportional to eligible source counts. Largest-remainder rounding gives the exact requested example totals, without replacement. Insufficient candidates cause an explicit failure. Data order is deterministically shuffled by hash priority.
+
+Omitting `--legal-examples` selects all legal training candidates remaining after filtering, deduplication and validation holdout. Omitting `--general-examples` matches that resolved count. An explicit general quota must equal the legal quota. There is no repetition or automatic reduction of the legal count when general data is insufficient: preparation reports the shortage in the error and writes `quota_report.json` with available counts. All LawInstruct plus a 50:50 mixture is possible without replacement only when enough general examples exist. Validation remains separate and its domain counts can differ.
 
 **Implemented limits relative to the broader planning note:** full-pool MinHash near deduplication, semantic decontamination, and a full LegalBench example-overlap audit are not implemented here. The manifest states the actual policy. Do not describe these artifacts as completely contamination-free. LegalBench-related LawInstruct sources are retained; report the existing dataset-held-out and task-held-out LegalBench views after SFT. Existing source license terms still apply.
 
@@ -109,7 +111,7 @@ Preparation uses one process on `amd`; training requests four GPUs on `i7_h200`.
 Prepared data defaults to:
 
 ```text
-~/scratch/legal_data_process/datasets/SFT-processed/LawInstruct-General-1.2M-Qwen3/
+~/scratch/legal_data_process/datasets/SFT-processed/LawInstruct-General-Balanced-Qwen3/
   manifest.json             # Written last: completed preparation
   tokenizer/                # Fixed tokenizer/template for all comparisons
   train.jsonl               # Selected canonical conversations and provenance
@@ -117,6 +119,7 @@ Prepared data defaults to:
   dataset/                  # Hugging Face train/validation Arrow data
   rejections.jsonl
   conflicting_prompts.jsonl
+  quota_report.json          # Available counts and requested quotas, including on shortage
   candidates.sqlite         # Large preparation intermediate, retained for audit
   arrow_cache/              # Preparation intermediate
 ```
@@ -124,6 +127,8 @@ Prepared data defaults to:
 The manifest reports source hashes, selected quotas, rejection counts, tokenizer signature, total and supervised tokens, and train/validation composition. The mixture is 50:50 by examples, not necessarily by tokens. Intermediates can be large; put preparation on shared scratch with sufficient quota. No automatic deletion occurs. An interrupted preparation is not resumable; use a new preparation directory after diagnosing the failure.
 
 When preparation already completed, submit only `submit_train_sft.sh`. Every Base/CPT comparison should use the same `--prepared-dir` and hyperparameters. The tokenizer signature is checked against each input model.
+
+Both wrappers now default to `LawInstruct-General-Balanced-Qwen3`. Existing `LawInstruct-General-1.2M-Qwen3` data is unchanged; to reuse it, explicitly pass that path through `--prepared-dir` or `PREPARED_DIR`. The manifest records both requested quotas (`null` means automatic) and the resolved counts.
 
 ## Defaults and overrides
 
@@ -133,8 +138,8 @@ When preparation already completed, submit only `submit_train_sft.sh`. Every Bas
 | `--prepared-dir` | Path above | Shared reusable SFT data |
 | `--output-dir` | `sft-model/<input model name>-SFT` | Final model |
 | `--checkpoint-dir` | `checkpoints/<output folder name>` | Resume checkpoints |
-| `--legal-examples` | 600000 | Legal training quota, preparation only |
-| `--general-examples` | 600000 | General training quota, preparation only |
+| `--legal-examples` | omitted / automatic | All eligible legal training examples; supply a positive integer for a smaller sample |
+| `--general-examples` | omitted / automatic | Match resolved legal count; explicit value must equal legal count |
 | `--validation-fraction` | 0.01 | Group holdout probability |
 | `--validation-examples-per-domain` | 2000 | Maximum held-out sample per pool |
 | `--max-length` | 4096 | Reject longer conversations; must match prepared manifest |

@@ -29,5 +29,5 @@ echo "Preparing SFT data on $(hostname); project=${SCRIPT_PROJECT_ROOT}"
 srun --cpu-bind=none python scripts/training/train_sft.py \
     --prepare-only \
     --model-path "${MODEL_PATH:-${HOME}/scratch/llms_model/lexlegal_llms/cpt-model/Qwen-Lex-Legal-CPT-using-Legislation-3B}" \
-    --prepared-dir "${PREPARED_DIR:-${HOME}/scratch/legal_data_process/datasets/SFT-processed/LawInstruct-General-1.2M-Qwen3}" \
+    --prepared-dir "${PREPARED_DIR:-${HOME}/scratch/legal_data_process/datasets/SFT-processed/LawInstruct-General-Balanced-Qwen3}" \
     "$@"

@@ -223,6 +223,26 @@ def allocate(counts, target):
     return quotas
 
 
+def resolve_training_targets(legal, general, available):
+    """Resolve automatic quotas after filtering/holdout; never sample with replacement."""
+    legal = available.get('legal', 0) if legal is None else legal
+    general = legal if general is None else general
+    if legal <= 0 or general <= 0:
+        raise ValueError('A balanced mixture requires eligible examples in both pools')
+    if legal != general:
+        raise ValueError(f'50:50 requires equal quotas: legal={legal:,}, general={general:,}')
+    for domain, target in (('legal', legal), ('general', general)):
+        count = available.get(domain, 0)
+        if target > count:
+            raise ValueError(
+                f'{domain} quota {target:,} exceeds {count:,} eligible training examples '
+                f'(shortfall {target-count:,}). Cannot use all legal data and keep 50:50 '
+                f'without repetition. Add more eligible data or set --legal-examples '
+                f'{min(available.values()):,} (without commas) for a smaller balanced sample.'
+            )
+    return {'legal': legal, 'general': general}
+
+
 def prepare(args, tokenizer):
     """Single-process CPU preparation; completion manifest is written last."""
     from datasets import Dataset, DatasetDict, Features, Sequence, Value
@@ -299,8 +319,17 @@ def prepare(args, tokenizer):
             break
     conn.execute('CREATE INDEX selection_idx ON examples(domain,split,stratum,priority)')
     conn.execute('CREATE TABLE selected (id TEXT PRIMARY KEY, split TEXT)')
+    available_totals = {domain: 0 for domain in ('legal', 'general')}
+    available_totals.update(dict(conn.execute("SELECT domain,COUNT(*) FROM examples WHERE split='train' GROUP BY domain")))
+    write_json(out / 'quota_report.json', {
+        'available_train': available_totals,
+        'requested': {'legal': args.legal_examples, 'general': args.general_examples},
+        'policy': 'all eligible legal if omitted; match general; 50:50 without replacement',
+    })
+    conn.commit()
+    targets = resolve_training_targets(args.legal_examples, args.general_examples, available_totals)
     quotas = {}
-    for domain, target in (('legal', args.legal_examples), ('general', args.general_examples)):
+    for domain, target in targets.items():
         for split in ('train', 'validation'):
             available = dict(conn.execute('SELECT stratum,COUNT(*) FROM examples WHERE domain=? AND split=? GROUP BY stratum', (domain, split)))
             desired = target if split == 'train' else min(args.validation_examples_per_domain, sum(available.values()))
@@ -339,6 +368,8 @@ def prepare(args, tokenizer):
                 'seed': args.seed, 'max_length': args.max_length, 'validation_fraction': args.validation_fraction,
                 'tokenizer_signature': tokenizer_signature(tokenizer), 'template': CHAT_TEMPLATE,
                 'counts': dict(counts), 'quotas': quotas, 'statistics': stats, 'inputs': inputs,
+                'requested_training_examples': {'legal': args.legal_examples, 'general': args.general_examples},
+                'resolved_training_examples': targets,
                 'mmlu_inputs': guard.files, 'mmlu_policy': '>=0.8 question 5-gram containment; dev/validation/test',
                 'near_deduplication': 'not performed across SFT pool; normalized prompt-response pairs and prompt conflicts only',
                 'validation_grouping': 'LawInstruct prompt / MetaMath original_question / conversation user text; exact prompt cross-source holdout',
