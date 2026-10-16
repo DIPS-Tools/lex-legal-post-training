@@ -2,6 +2,7 @@
 /docs/*
 !/docs/evaluation.md
 !/docs/cpt_model_evaluation_comparison.md
+!/docs/why_continue_legal_post_training.md
 /requirements-app.txt
 /requirements.txt
 /uv.lock
