@@ -106,3 +106,97 @@ srun --cpu-bind=none torchrun --standalone --nnodes=1 --nproc_per_node="${GPUS_P
 #  Checkpoints:
 #
 #  ~/scratch/llms_model/lexlegal_llms/checkpoints/Qwen-Lex-Legal-CPT-using-Proportional-5B-FA2-SFT
+
+
+# ----
+# cd "${HOME}/scratch/dips_project/lex-legal-post-training"
+  #  mkdir -p logs
+  #
+  #  PROJECT_ROOT="$(pwd)"
+  #  MODEL_PATH="${HOME}/scratch/llms_model/lexlegal_llms/cpt-model/Qwen-Lex-Legal-CPT-using-Proportional-5B-FA2"
+  #  MODEL_RUN_NAME="Qwen-Lex-Legal-CPT-using-Proportional-5B-FA2-SFT"
+  #  PREPARED_DIR="${HOME}/scratch/legal_data_process/datasets/SFT-processed/LawInstruct-General-600K-600K-Qwen3"
+  #
+  #  PREP_JOB_ID="$(
+  #      sbatch --parsable \
+  #          --export="ALL,PROJECT_ROOT=${PROJECT_ROOT},MODEL_PATH=${MODEL_PATH},PREPARED_DIR=${PREPARED_DIR}" \
+  #          scripts/training/submit_prepare_sft.sh \
+  #          --legal-examples 600000
+  #  )"
+  #  PREP_JOB_ID="${PREP_JOB_ID%%;*}"
+  #
+  #  SFT_JOB_ID="$(
+  #      sbatch --parsable \
+  #          --dependency="afterok:${PREP_JOB_ID}" \
+  #
+  #          --export="ALL,PROJECT_ROOT=${PROJECT_ROOT},MODEL_PATH=${MODEL_PATH},MODEL_RUN_NAME=${MODEL_RUN_NAME},PREPARED_DIR=${PREPARE
+  #          D_DIR}" \
+  #          scripts/training/submit_train_sft.sh \
+  #          --attn-implementation flash_attention_2
+  #  )"
+  #
+  #  echo "Preparation job: ${PREP_JOB_ID}"
+  #  echo "Dependent SFT job: ${SFT_JOB_ID}"
+#  ------
+# using all legal to do sft
+# cd "${HOME}/scratch/dips_project/lex-legal-post-training"
+  #  mkdir -p logs
+  #
+  #  PROJECT_ROOT="$(pwd)"
+  #  MODEL_PATH="${HOME}/scratch/llms_model/lexlegal_llms/cpt-model/Qwen-Lex-Legal-CPT-using-Proportional-5B-FA2"
+  #  MODEL_RUN_NAME="Qwen-Lex-Legal-CPT-using-Proportional-5B-FA2-SFT-AllLegal"
+  #  PREPARED_DIR="${HOME}/scratch/legal_data_process/datasets/SFT-processed/LawInstruct-AllLegal-General-Matched-Qwen3"
+  #
+  #  PREP_JOB_ID="$(
+  #      sbatch --parsable \
+  #          --export="ALL,PROJECT_ROOT=${PROJECT_ROOT},MODEL_PATH=${MODEL_PATH},PREPARED_DIR=${PREPARED_DIR}" \
+  #          scripts/training/submit_prepare_sft.sh
+  #  )"
+  #  PREP_JOB_ID="${PREP_JOB_ID%%;*}"
+  #
+  #  SFT_JOB_ID="$(
+  #      sbatch --parsable \
+  #          --dependency="afterok:${PREP_JOB_ID}" \
+  #
+  #          --export="ALL,PROJECT_ROOT=${PROJECT_ROOT},MODEL_PATH=${MODEL_PATH},MODEL_RUN_NAME=${MODEL_RUN_NAME},PREPARED_DIR=${PREPARE
+  #          D_DIR}" \
+  #          scripts/training/submit_train_sft.sh \
+  #          --attn-implementation flash_attention_2
+  #  )"
+  #
+  #  echo "Preparation: ${PREP_JOB_ID}"
+  #  echo "Dependent SFT: ${SFT_JOB_ID}"
+
+
+
+#  ---finanly:
+# PROJECT_ROOT="$(pwd)"
+  #  MODEL_PATH="${HOME}/scratch/llms_model/lexlegal_llms/cpt-model/Qwen-Lex-Legal-CPT-using-Legislation-3B"
+  #  MODEL_RUN_NAME="Qwen-Lex-Legal-CPT-using-Legislation-3B-SFT-AllLegal"
+  #  PREPARED_DIR="${HOME}/scratch/legal_data_process/datasets/SFT-processed/LawInstruct-AllLegal-General-Matched-Qwen3"
+  #
+  #  PREP_JOB_ID="$(
+  #      sbatch --parsable \
+  #          --export="ALL,PROJECT_ROOT=${PROJECT_ROOT},MODEL_PATH=${MODEL_PATH},PREPARED_DIR=${PREPARED_DIR}" \
+  #          scripts/training/submit_prepare_sft.sh
+  #  )" && {
+  #      PREP_JOB_ID="${PREP_JOB_ID%%;*}"
+  #      echo "Preparation job: ${PREP_JOB_ID}"
+  #
+  #      SFT_JOB_ID="$(
+  #          sbatch --parsable \
+  #              --dependency="afterok:${PREP_JOB_ID}" \
+  #
+  #              --export="ALL,PROJECT_ROOT=${PROJECT_ROOT},MODEL_PATH=${MODEL_PATH},MODEL_RUN_NAME=${MODEL_RUN_NAME},PREPARED_DIR=${PRE
+  #              PARED_DIR}" \
+  #              scripts/training/submit_train_sft.sh \
+  #              --attn-implementation flash_attention_2
+  #      )" && echo "Dependent SFT job: ${SFT_JOB_ID}"
+  #  }
+  #
+  #  The preparation directory must be new or empty, with no other preparation job writing to it. If the general pool cannot match the
+  #  legal count, preparation fails and training will not start.
+  #
+  #  Final model:
+  #
+  #  ~/scratch/llms_model/lexlegal_llms/sft-model/Qwen-Lex-Legal-CPT-using-Legislation-3B-SFT-AllLegal
